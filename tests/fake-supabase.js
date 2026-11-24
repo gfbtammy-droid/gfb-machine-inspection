@@ -7,7 +7,7 @@
     {id: 'u3', email: 'siti@mic.gfbfood.com', name: 'Siti QC', role: 'checker', active: true},
     {id: 'u4', email: 'farah@demo.my', name: 'Farah Exec', role: 'verifier', active: true}
   ];
-  const DB = {users: U, tpls: [], insp: [], log: []};
+  const DB = {users: U, tpls: [], insp: [], log: [], ctr: {}};
   window.__DB = DB;
   let me = null, n = 0;
   const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -34,7 +34,7 @@
       if (!i) { i = {id: 'i' + (++n), machine: a.p_machine, date: a.p_date, status: 'open', template: JSON.parse(JSON.stringify(t)), rounds: []}; DB.insp.push(i); }
       if (i.status === 'verified') E('Senarai semak ini telah disahkan / This checklist has already been verified');
       const d = i.rounds.find(r => r.done_by === me.id && r.status === 'draft'); if (d) return d.id;
-      const r = {id: 'r' + (++n), seq: i.rounds.reduce((m, x) => Math.max(m, x.seq), 0) + 1, time: a.p_time, batch: a.p_batch, status: 'draft', ng: 0, done_by: me.id, done_name: me.name, items: {}, refs: {}, updated_at: new Date().toISOString()};
+      const r = {id: 'r' + (++n), seq: i.rounds.reduce((m, x) => Math.max(m, x.seq), 0) + 1, time: a.p_time, batch: '', status: 'draft', ng: 0, done_by: me.id, done_name: me.name, items: {}, refs: {}, updated_at: new Date().toISOString()};
       i.rounds.push(r); lg('round_start', i, {round: r.seq}); return r.id;
     },
     mic_save_round(a) {
@@ -42,10 +42,11 @@
       let missing = 0, bad = 0; const clean = {};
       i.template.sections.forEach(s => s.items.forEach(it => { const x = (a.p_items || {})[it.id]; if (x && x.c && (x.c === 'na' || x.p)) { if (x.c === 'ng' || x.p === 'n') { bad++; if (a.p_submit && !String(x.r || '').trim()) E('x / Please write a remark for every part that is Not OK or missing'); } clean[it.id] = {c: x.c, p: x.c === 'na' ? '' : x.p, r: x.r || ''}; } else missing++; }));
       if (a.p_submit && missing) E(missing + ' bahagian belum diperiksa / ' + missing + ' part(s) not yet inspected');
-      if (a.p_submit && (!a.p_time || !String(a.p_batch).trim())) E('Masa dan nombor batch diperlukan / Time and batch number are required');
-      Object.assign(r, {time: a.p_time, batch: a.p_batch, refs: a.p_refs || {}, items: clean, ng: bad, status: a.p_submit ? 'submitted' : 'draft', submitted_at: a.p_submit ? new Date().toISOString() : null, updated_at: new Date().toISOString()});
+      if (a.p_submit && !a.p_time) E('Masa diperlukan / Time is required');
+      if (a.p_submit && !/^\d{6}-\d+$/.test(r.batch)) { const ym = i.date.slice(0, 7).replace('-', ''); DB.ctr[ym] = (DB.ctr[ym] || 0) + 1; r.batch = ym + '-' + String(DB.ctr[ym]).padStart(3, '0'); }
+      Object.assign(r, {time: a.p_time, refs: a.p_refs || {}, items: clean, ng: bad, status: a.p_submit ? 'submitted' : 'draft', submitted_at: a.p_submit ? new Date().toISOString() : null, updated_at: new Date().toISOString()});
       if (a.p_submit) { r.note = null; lg('round_submit', i, {round: r.seq}); }
-      return {status: r.status, ng: bad, missing};
+      return {status: r.status, ng: bad, missing, batch: r.batch};
     },
     mic_delete_round(a) { need(1); const [i, r] = findR(a.p_id); if (r.status !== 'draft') E('x / Only a draft can be deleted'); i.rounds = i.rounds.filter(x => x !== r); },
     mic_check_round(a) {

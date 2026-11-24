@@ -46,7 +46,7 @@ with sync_playwright() as p:
     for i in ids: pg.click('#it-%s [data-v=ok]' % i)
     pg.click('#it-%s [data-v=ng]' % ids[1]); pg.click('#it-%s [data-v=miss]' % ids[5]); pg.click('#it-%s [data-v=na]' % ids[6])
     check(pg.locator('#pcount').inner_text() == '53 / 53', 'progress 53/53')
-    pg.fill('#r-batch', 'B12345'); pg.fill('[data-ref]', 'W60/03')
+    pg.fill('[data-ref]', 'W60/03')
     pg.click('[data-act=submit]'); check('what is wrong' in pg.locator('.toast').inner_text().lower(), 'remark required for Not OK')
     pg.fill('[data-rm="%s"]' % ids[1], 'Auger dented at tip'); pg.fill('[data-rm="%s"]' % ids[5], 'Knocker removed')
     pg.evaluate("window.scrollTo(0, 900);0"); pg.wait_for_timeout(300); pg.screenshot(path=OUT + '/04-round-answers-phone.png')
@@ -61,15 +61,16 @@ with sync_playwright() as p:
     pg.click('.mcard >> text=Drum Mixer 250 kg'); pg.click('[data-act=start]'); pg.wait_for_selector('.item')
     ids = pg.evaluate("Array.from(document.querySelectorAll('.item')).map(x=>x.id.slice(3))"); check(len(ids) == 8, 'drum 8 parts')
     for i in ids: pg.click('#it-%s [data-v=ok]' % i)
-    pg.click('#it-%s [data-v=ng]' % ids[2]); pg.fill('[data-rm="%s"]' % ids[2], 'Valve handle loose'); pg.fill('#r-batch', 'B700')
+    pg.click('#it-%s [data-v=ng]' % ids[2]); pg.fill('[data-rm="%s"]' % ids[2], 'Valve handle loose')
     pg.screenshot(path=OUT + '/06-round-desktop.png')
     pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); pg.screenshot(path=OUT + '/07-f45-reminder.png'); pg.click('.modal [data-x="1"]')
     pg.wait_for_selector('.rcard'); check('Waiting for check' in pg.locator('.rcard').inner_text(), 'round waiting for check')
+    ym = pg.evaluate("S.today.slice(0,7).replace('-','')"); check('Batch ' + ym + '-001' in pg.locator('.rcard').inner_text(), 'auto batch number YYYYMM-001'); 
     check(pg.locator('.rcard a.btn').inner_text() == 'View', 'operator can only view own submitted round')
     # second round (change-over) by the same operator
     pg.click('[data-act=start]'); pg.wait_for_selector('.item')
     for i in ids: pg.click('#it-%s [data-v=ok]' % i)
-    pg.fill('#r-batch', 'B701'); pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); check(pg.locator('.rcard').count() == 2, '2 rounds')
+    pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); check(pg.locator('.rcard').count() == 2, '2 rounds'); check('Batch ' + ym + '-002' in pg.locator('.rcard >> nth=1').inner_text(), 'second round gets -002')
     signout(pg)
     # --- checker ---
     login(pg, 'siti'); check('2 round(s) waiting for Check by' in pg.locator('main').inner_text(), 'checker banner')

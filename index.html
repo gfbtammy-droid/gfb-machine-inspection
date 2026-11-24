@@ -584,7 +584,7 @@ async function vRound(key, date, rid) {
   const t = sh.template, edit = r.status === 'draft' && (r.done_by === S.me.id || rank() >= 4) && sh.status !== 'verified';
   S.editing = edit; S.rkey = key; S.rdate = date;
   let time = r.time || '', batch = r.batch || '';
-  if (edit) { try { const l = JSON.parse(localStorage.getItem(draftKey(rid)) || 'null'); if (l && l.ts > new Date(r.updated_at).getTime()) { S.ans = l.ans; S.refs = l.refs || {}; time = l.time || time; batch = l.batch || batch; S.dirty = true; } } catch (e) {} }
+  if (edit) { try { const l = JSON.parse(localStorage.getItem(draftKey(rid)) || 'null'); if (l && l.ts > new Date(r.updated_at).getTime()) { S.ans = l.ans; S.refs = l.refs || {}; time = l.time || time; S.dirty = true; } } catch (e) {} }
   if (edit && !time) { time = nowHM(); S.dirty = true; }
   const canCheck = rank() >= 2 && r.status === 'submitted' && r.done_by !== S.me.id && sh.status !== 'verified';
   const canReturn = rank() >= 2 && sh.status !== 'verified' && (r.status === 'submitted' || r.status === 'checked' && (r.check_by === S.me.id || rank() >= 4));
@@ -592,7 +592,7 @@ async function vRound(key, date, rid) {
     '<div class="card"><h2>' + esc(t.name) + ' &ndash; ' + T('Round', 'Pusingan') + ' ' + r.seq + '</h2><div class="small muted">' + esc(t.formNo) + ' Rev ' + esc(t.rev) + ' &middot; ' + fmtD(date) + ' &middot; Done by: ' + esc(r.done_name) + '</div>' +
     (r.note ? '<div class="banner' + (r.status === 'draft' ? ' bad' : ' info') + '">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') : T('Checker note', 'Catatan penyemak')) + ': ' + esc(r.note) + '</div>' : '') +
     '<div class="row" style="margin-top:10px;align-items:flex-start"><label class="f" style="flex:1;min-width:120px"><span>TIME</span><input type="time" id="r-time" value="' + esc(time) + '"' + (edit ? '' : ' disabled') + '></label>' +
-    '<label class="f" style="flex:2;min-width:160px"><span>BATCH ' + T('(batch / job number)', '(nombor batch / job)') + '</span><input type="text" id="r-batch" maxlength="60" value="' + esc(batch) + '"' + (edit ? '' : ' disabled') + ' autocomplete="off"></label></div></div>';
+    '<label class="f" style="flex:2;min-width:160px"><span>BATCH NO. ' + T('(automatic)', '(automatik)') + '</span><input type="text" id="r-batch" value="' + esc(batch) + '" placeholder="' + T('Given automatically when you submit', 'Diberi secara automatik apabila dihantar') + '" readonly disabled></label></div></div>';
   t.sections.forEach(s => {
     h += '<div class="sec-h"><span>' + esc(s.title || t.partHdr) + '</span>' + (s.ref ? (edit ? '<input type="text" data-ref="' + s.id + '" maxlength="30" placeholder="' + T('Unit no.', 'No. unit') + '" value="' + esc(S.refs[s.id] || '') + '" aria-label="Unit number">' : (S.refs[s.id] ? '<span class="chip">' + esc(S.refs[s.id]) + '</span>' : '')) : '') + '</div>';
     s.items.forEach(it => { h += itemHtml(it, edit); });
@@ -647,7 +647,7 @@ async function submitRound() {
   if (miss.length) { const el = $('#it-' + miss[0].id); if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'}); return toast(miss.length + ' ' + T('part(s) not yet inspected', 'bahagian belum diperiksa'), true); }
   const noRm = its.filter(i => { const a = S.ans[i.id]; return (a.c === 'ng' || a.p === 'n') && !String(a.r || '').trim(); });
   if (noRm.length) { const ta = $('[data-rm="' + noRm[0].id + '"]'); if (ta) { ta.scrollIntoView({behavior: 'smooth', block: 'center'}); ta.focus(); } return toast(T('Please write what is wrong for every Not OK / Missing part', 'Sila tulis masalah bagi setiap bahagian Tidak OK / Tiada'), true); }
-  if (!$('#r-time').value || !$('#r-batch').value.trim()) { $('#r-batch').focus(); return toast(T('Time and batch number are required', 'Masa dan nombor batch diperlukan'), true); }
+  if (!$('#r-time').value) { $('#r-time').focus(); return toast(T('Time is required', 'Masa diperlukan'), true); }
   const ng = its.filter(i => S.ans[i.id].c === 'ng').length;
   const ok = await ask({title: T('Submit this inspection?', 'Hantar pemeriksaan ini?'), body: T('You confirm that you inspected every part yourself. Your name and the time will be recorded as <b>Done by</b>. After submitting you cannot change the answers unless the checker returns it.', 'Anda mengesahkan bahawa anda sendiri memeriksa setiap bahagian. Nama dan masa anda akan direkod sebagai <b>Done by</b>. Selepas dihantar, jawapan tidak boleh diubah kecuali dipulangkan oleh penyemak.') + (ng ? '<div class="banner bad">' + ng + ' ' + T('part(s) Not OK or missing.', 'bahagian Tidak OK atau tiada.') + '</div>' : ''), ok: T('Submit', 'Hantar')});
   if (!ok) return;
@@ -655,8 +655,8 @@ async function submitRound() {
     const res = await saveDraft(false, true);
     try { localStorage.removeItem(draftKey(S.round.id)); } catch (e) {}
     S.editing = false; S.dirty = false;
-    if (res && res.ng) await ask({title: T('Not OK parts found', 'Bahagian Tidak OK ditemui'), body: T('Do not use the machine until it is cleared. Inform the Production Leader and QC now, and record the breakdown, root cause and corrective action in the <b>Machine Maintenance Upkeep Report (F45)</b> as required by P07.', 'Jangan gunakan mesin sehingga ia dibenarkan. Maklumkan Ketua Pengeluaran dan QC sekarang, dan rekodkan kerosakan, punca dan tindakan pembetulan dalam <b>Machine Maintenance Upkeep Report (F45)</b> seperti dikehendaki P07.'), noCancel: true, ok: T('Understood', 'Faham')});
-    else toast(T('Submitted for check. You can download the PDF on this page.', 'Dihantar untuk semakan. Anda boleh muat turun PDF di halaman ini.'));
+    if (res && res.ng) await ask({title: T('Not OK parts found', 'Bahagian Tidak OK ditemui'), body: '<p><b>Batch no. ' + esc(res.batch || '') + '</b></p>' + T('Do not use the machine until it is cleared. Inform the Production Leader and QC now, and record the breakdown, root cause and corrective action in the <b>Machine Maintenance Upkeep Report (F45)</b> as required by P07.', 'Jangan gunakan mesin sehingga ia dibenarkan. Maklumkan Ketua Pengeluaran dan QC sekarang, dan rekodkan kerosakan, punca dan tindakan pembetulan dalam <b>Machine Maintenance Upkeep Report (F45)</b> seperti dikehendaki P07.'), noCancel: true, ok: T('Understood', 'Faham')});
+    else toast(T('Submitted. Batch no. ', 'Dihantar. No. batch ') + ((res && res.batch) || '') + T('. You can download the PDF on this page.', '. Anda boleh muat turun PDF di halaman ini.'));
     go('sheet/' + S.rkey + '/' + S.rdate);
   } catch (e) { fail(e); }
 }
@@ -746,7 +746,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.rm) { (S.ans[t.dataset.rm] = S.ans[t.dataset.rm] || {}).r = t.value; touch(); }
   else if (t.dataset.ref) { S.refs[t.dataset.ref] = t.value; touch(); }
-  else if ((t.id === 'r-time' || t.id === 'r-batch') && S.editing) touch();
+  else if (t.id === 'r-time' && S.editing) touch();
   else if (t.dataset.tf) S.ed[t.dataset.tf] = t.value;
   else if (t.dataset.sf) S.ed.sections[+t.dataset.sf].title = t.value;
   else if (t.dataset.if && t.dataset.if !== 'flag') S.ed.sections[+t.dataset.s].items[+t.dataset.i][t.dataset.if] = t.value;

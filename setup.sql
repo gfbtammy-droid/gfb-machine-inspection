@@ -75,11 +75,19 @@ create table if not exists public.mic_log (
 );
 create index if not exists mic_log_insp_ix on public.mic_log (inspection_id);
 
+-- Running batch numbers for inspection rounds: one counter per month (YYYYMM-NNN).
+create table if not exists public.mic_counters (
+  ym text primary key,
+  n  int  not null
+);
+
 alter table public.mic_users       enable row level security;
 alter table public.mic_templates   enable row level security;
 alter table public.mic_inspections enable row level security;
 alter table public.mic_rounds      enable row level security;
 alter table public.mic_log         enable row level security;
+alter table public.mic_counters    enable row level security;
+revoke all on public.mic_counters from anon, authenticated;
 revoke all on public.mic_users, public.mic_templates, public.mic_inspections, public.mic_rounds, public.mic_log from anon, authenticated;
 revoke all on sequence public.mic_log_id_seq from anon, authenticated;
 
@@ -300,7 +308,7 @@ begin
   if rid is not null then return rid; end if;
   select coalesce(max(seq), 0) + 1 into n from public.mic_rounds where inspection_id = i.id;
   insert into public.mic_rounds (inspection_id, seq, time_text, batch, done_by, done_name)
-  values (i.id, n, left(coalesce(p_time, ''), 20), left(coalesce(p_batch, ''), 60), uid, public.mic_name())
+  values (i.id, n, left(coalesce(p_time, ''), 20), '', uid, public.mic_name())
   returning id into rid;
   perform public.mic_addlog('round_start', i.id, rid, jsonb_build_object('round', n));
   return rid;
@@ -309,11 +317,12 @@ end $$;
 create or replace function public.mic_save_round(p_id uuid, p_time text, p_batch text, p_refs jsonb, p_items jsonb, p_submit boolean) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare uid uuid := auth.uid(); r public.mic_rounds; i public.mic_inspections; it record; a jsonb; c text; p text; rm text;
-        v_clean jsonb := '{}'::jsonb; missing int := 0; bad int := 0; v_refs jsonb := '{}'::jsonb; s record;
+        v_clean jsonb := '{}'::jsonb; missing int := 0; bad int := 0; v_refs jsonb := '{}'::jsonb; s record; v_batch text := ''; v_ym text; v_n int;
 begin
   perform public.mic_need(1);
   select * into r from public.mic_rounds where id = p_id for update;
   if not found then raise exception 'Pusingan tidak dijumpai / Round not found'; end if;
+  if r.batch ~ '^[0-9]{6}-[0-9]+$' then v_batch := r.batch; end if;
   if r.done_by <> uid and public.mic_rank() < 4 then
     raise exception 'Hanya orang yang memulakan pusingan ini boleh mengisinya / Only the person who started this round can fill it in';
   end if;
@@ -343,11 +352,16 @@ begin
     if missing > 0 then
       raise exception '% bahagian belum diperiksa / % part(s) not yet inspected', missing, missing;
     end if;
-    if btrim(coalesce(p_time, '')) = '' or btrim(coalesce(p_batch, '')) = '' then
-      raise exception 'Masa dan nombor batch diperlukan / Time and batch number are required';
+    if btrim(coalesce(p_time, '')) = '' then
+      raise exception 'Masa diperlukan / Time is required';
+    end if;
+    if v_batch = '' then   -- running batch number YYYYMM-NNN, given once when the round is first submitted
+      v_ym := to_char(i.insp_date, 'YYYYMM');
+      insert into public.mic_counters as c (ym, n) values (v_ym, 1) on conflict (ym) do update set n = c.n + 1 returning c.n into v_n;
+      v_batch := v_ym || '-' || lpad(v_n::text, 3, '0');
     end if;
   end if;
-  update public.mic_rounds set time_text = left(btrim(coalesce(p_time, '')), 20), batch = left(btrim(coalesce(p_batch, '')), 60),
+  update public.mic_rounds set time_text = left(btrim(coalesce(p_time, '')), 20), batch = v_batch,
          refs = v_refs, items = v_clean, ng = bad, updated_at = now(),
          status = case when p_submit then 'submitted' else 'draft' end,
          submitted_at = case when p_submit then now() else null end,
@@ -355,7 +369,7 @@ begin
    where id = p_id;
   update public.mic_inspections set updated_at = now() where id = i.id;
   if p_submit then perform public.mic_addlog('round_submit', i.id, p_id, jsonb_build_object('round', r.seq, 'not_ok', bad)); end if;
-  return jsonb_build_object('status', case when p_submit then 'submitted' else 'draft' end, 'ng', bad, 'missing', missing);
+  return jsonb_build_object('status', case when p_submit then 'submitted' else 'draft' end, 'ng', bad, 'missing', missing, 'batch', v_batch);
 end $$;
 
 create or replace function public.mic_delete_round(p_id uuid) returns void
