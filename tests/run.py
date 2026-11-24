@@ -18,7 +18,7 @@ def setup(ctx):
     pg = ctx.new_page()
     pg.route('**/vendor/supabase.js', lambda r: r.fulfill(body=FAKE, content_type='application/javascript'))
     pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)))
-    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text and 'new account' not in m.text else None)
+    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text and 'new account' not in m.text and 'already in the list' not in m.text else None)
     pg.goto('http://127.0.0.1:8765/index.html'); pg.wait_for_selector('#authf'); return pg
 def login(pg, user):
     pg.fill('[name=uid]', user); pg.fill('[name=pw]', 'x'); pg.click('#authf button[type=submit]'); pg.wait_for_selector('.grid')
@@ -111,6 +111,7 @@ with sync_playwright() as p:
     pg.wait_for_selector('.modal >> text=User added'); pg.click('.modal [data-x="1"]'); check(pg.locator('tr[data-u]').count() == 5, 'new user appears in list')
     row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Mei Ling Tan"]')); check(row.locator('.u-f:checked').count() == 2 and row.locator('.u-act').is_checked(), 'new user active with 2 functions')
     check(pg.locator('.who').inner_text().startswith('Demo Admin'), 'admin still signed in after adding a user')
+    pg.click('[data-act=uadd]'); pg.fill('#uaddf [name=nm]', 'Dup'); pg.fill('#uaddf [name=uid]', 'Ali'); pg.fill('#uaddf [name=pw]', 'welcome123'); pg.click('#uaddf button[type=submit]'); pg.wait_for_selector('.toast.bad'); check('already in the list' in pg.locator('.toast').inner_text(), 'duplicate username refused'); pg.click('#uaddf [data-x="0"]')
     # give the operator a second function, and make a check-only user
     row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Ali bin Abu"]')); row.locator('.u-f[value=verify]').check(); row.locator('[data-act=usave]').click(); pg.wait_for_selector('.toast >> text=Saved')
     row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Siti QC"]')); row.locator('.u-f[value=fill]').uncheck(); row.locator('[data-act=usave]').click(); pg.wait_for_timeout(400)
@@ -120,9 +121,7 @@ with sync_playwright() as p:
     pg.click('.nav >> text=Today'); pg.click('.mcard >> text=IBC'); pg.wait_for_selector('.f52'); pg.evaluate("window.__printed=false; window.print = () => { window.__printed = true };0")
     pg.click('[data-act=print][data-ph="1"]'); pg.wait_for_function('window.__printed === true', timeout=20000); pg.emulate_media(media='print'); pg.pdf(path=OUT + '/print-ibc-blank.pdf', prefer_css_page_size=True); pg.emulate_media(media='screen')
     signout(pg)
-    # --- self registration ---
-    pg.click('[data-v=reg]'); pg.fill('[name=name]', 'Kumar Raj'); pg.fill('[name=uid]', 'kumar'); pg.fill('[name=pw]', 'password1'); pg.fill('[name=pw2]', 'password1'); pg.click('#authf button[type=submit]')
-    pg.wait_for_selector('text=Waiting for activation'); check(True, 'pending screen'); pg.screenshot(path=OUT + '/13-pending.png')
-    pg.click('[data-act=lang]'); check('Menunggu pengaktifan' in pg.locator('#app').inner_text(), 'BM toggle')
+    check(pg.locator('[data-v=reg]').count() == 0 and 'Ask your Admin' in pg.locator('#app').inner_text(), 'no self-registration on sign-in page')
+    pg.click('[data-act=lang]'); check('Minta Admin' in pg.locator('#app').inner_text(), 'BM toggle')
     b.close()
 print('passed %d checks, %d problems' % (ok, len(errs))); [print(' -', e) for e in errs]; sys.exit(1 if errs else 0)

@@ -75,6 +75,7 @@
         async resetPasswordForEmail() { return {error: null}; },
         onAuthStateChange() { return {data: {subscription: {unsubscribe() {}}}}; }
       },
+      functions: {async invoke(name, o) { const b = o.body; if (!has('admin')) return {data: {ok: false, error: 'not_admin'}, error: null}; const e = b.username + '@mic.gfbfood.com'; if (DB.users.some(x => x.email === e)) return {data: {ok: false, error: 'taken'}, error: null}; DB.users.push({id: 'u' + (DB.users.length + 1), email: e, name: b.name, funcs: ['fill'], active: false, listed: false}); return {data: {ok: true}, error: null}; }},
       async rpc(fn, args) { try { const d = F[fn](args || {}); return {data: d === undefined ? null : JSON.parse(JSON.stringify(d)), error: null}; } catch (e) { if (e && e.message && !(e instanceof Error)) return {data: null, error: e}; throw e; } }
     };
   }};

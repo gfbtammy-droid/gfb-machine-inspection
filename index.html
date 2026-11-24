@@ -243,10 +243,9 @@ function lightbox(imgs, cap) {
 /* ---------- sign-in ---------- */
 function loginId(v) { v = String(v || '').trim().toLowerCase(); return v.includes('@') ? v : v.replace(/\s+/g, '') + USER_DOMAIN; }
 function vLogin(msg) {
-  const reg = S.authTab === 'reg';
+  const reg = false;   // self-registration is off: an Admin adds every user (Users > Add user)
   $('#app').innerHTML = '<div class="login"><img class="logo" src="gfb-logo.png" alt="GFB Food"><h1 style="text-align:center">' + T('Machine Inspection Checklist', 'Senarai Semak Pemeriksaan Mesin') + '</h1>' +
     '<div class="muted small" style="text-align:center">F52 &middot; GFB Food Sdn Bhd</div>' +
-    '<div class="tabs"><button data-act="authtab" data-v="in" class="' + (reg ? '' : 'on') + '">' + T('Sign in', 'Log masuk') + '</button><button data-act="authtab" data-v="reg" class="' + (reg ? 'on' : '') + '">' + T('New account', 'Akaun baharu') + '</button></div>' +
     (msg ? '<div class="banner info">' + esc(msg) + '</div>' : '') +
     '<form id="authf" class="card">' +
     (reg ? '<label class="f"><span>' + T('Full name (as it should appear on the checklist)', 'Nama penuh (seperti dipapar pada senarai semak)') + '</span><input type="text" name="name" required maxlength="80" autocomplete="name"></label>' : '') +
@@ -256,15 +255,16 @@ function vLogin(msg) {
     '<label class="small row" style="margin-bottom:12px"><input type="checkbox" id="showpw"> ' + T('Show password', 'Tunjuk kata laluan') + '</label>' +
     '<button class="btn pri" style="width:100%" type="submit">' + (reg ? T('Create account', 'Daftar akaun') : T('Sign in', 'Log masuk')) + '</button>' +
     (reg ? '<p class="small muted">' + T('After you register, the Admin must activate your account before you can use the checklist.', 'Selepas mendaftar, Admin perlu mengaktifkan akaun anda sebelum anda boleh menggunakan senarai semak.') + '</p>'
-         : '<p class="small" style="text-align:center;margin-bottom:0"><a href="#" data-act="forgot">' + T('Forgot password?', 'Lupa kata laluan?') + '</a></p>') +
+         : '<p class="small" style="text-align:center"><a href="#" data-act="forgot">' + T('Forgot password?', 'Lupa kata laluan?') + '</a></p><p class="small muted" style="text-align:center;margin-bottom:0">' + T('No account yet? Ask your Admin to add you.', 'Belum ada akaun? Minta Admin tambah anda.') + '</p>') +
     '</form><p style="text-align:center"><button class="btn sm" data-act="lang">' + (LANG === 'bm' ? 'English' : 'Bahasa Malaysia') + '</button></p></div>';
 }
 async function doAuth(f) {
+  const reg = false;
   const id = f.uid.value.trim(), pw = f.pw.value, btn = $('button[type=submit]', f);
   if (!/^[A-Za-z0-9._@+-]{3,80}$/.test(id.replace(/\s+/g, ''))) return toast(T('Username: letters and numbers only, at least 3 characters', 'Nama pengguna: huruf dan nombor sahaja, sekurang-kurangnya 3 aksara'), true);
   btn.disabled = true;
   try {
-    if (S.authTab === 'reg') {
+    if (reg) {
       if (pw !== f.pw2.value) throw new Error(T('The two passwords are not the same', 'Kedua-dua kata laluan tidak sama'));
       const name = f.name.value.trim();
       const {data, error} = await sb.auth.signUp({email: loginId(id), password: pw, options: {data: {name}}});
@@ -757,17 +757,16 @@ function addUserForm() {
       const args = {p_login: id, p_name: name, p_funcs: funcs, p_active: true};
       let r = await rpc('mic_add_user', args), made = false;
       if (r === 'no_account') {
+        if (id.includes('@')) throw new Error(T('No account exists with this email. For staff without a CMMS account, type a username instead (no @).', 'Tiada akaun dengan emel ini. Untuk staf tanpa akaun CMMS, taip nama pengguna (tanpa @).'));
         if (pw.length < 8) throw new Error(T('This is a new account, so please set a password of at least 8 characters', 'Ini akaun baharu, sila tetapkan kata laluan sekurang-kurangnya 8 aksara'));
-        // a separate, throw-away connection creates the account, so the Admin stays signed in
-        const tmp = supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'gfb-mic-tmp'}});
-        const {data, error} = await tmp.auth.signUp({email: loginId(id), password: pw, options: {data: {name}}});
-        if (error) throw error;
-        if (!data || !data.user) throw new Error(T('The account could not be created', 'Akaun tidak dapat didaftar'));
-        try { await tmp.auth.signOut(); } catch (x) {}
+        // the account is created on the server (no email is sent), and the Admin stays signed in
+        const {data, error} = await sb.functions.invoke('mic-create-user', {body: {username: id.toLowerCase(), password: pw, name}});
+        if (error) throw new Error(T('Could not reach the server to create the account. Please try again.', 'Tidak dapat menghubungi pelayan untuk mendaftar akaun. Sila cuba lagi.'));
+        if (!data || !data.ok) throw new Error({taken: T('This username is already taken. Choose another.', 'Nama pengguna ini telah digunakan. Pilih yang lain.'), not_admin: T('Only an Admin can add users', 'Hanya Admin boleh menambah pengguna'), bad_username: T('Username: letters and numbers only, at least 3 characters', 'Nama pengguna: huruf dan nombor sahaja, sekurang-kurangnya 3 aksara'), bad_password: T('Password must be 8 to 72 characters', 'Kata laluan mesti 8 hingga 72 aksara')}[data && data.error] || T('The account could not be created: ', 'Akaun tidak dapat didaftar: ') + ((data && (data.detail || data.error)) || ''));
         r = await rpc('mic_add_user', args); made = true;
       }
       if (r === 'exists') throw new Error(T('This person is already in the list below', 'Orang ini sudah ada dalam senarai di bawah'));
-      if (r !== 'added') throw new Error(T('The account was created but is waiting for email confirmation. Ask the person to confirm, then add them again.', 'Akaun didaftar tetapi menunggu pengesahan emel. Minta orang itu sahkan, kemudian tambah semula.'));
+      if (r !== 'added') throw new Error(T('The account was created but could not be added to the list. Please try Add user again.', 'Akaun didaftar tetapi gagal ditambah ke senarai. Sila cuba Tambah pengguna sekali lagi.'));
       bg.remove(); await vUsers();
       await ask({title: T('User added', 'Pengguna ditambah'), body: '<b>' + esc(name) + '</b><br>' + T('Sign-in', 'Log masuk') + ': <b>' + esc(id.toLowerCase()) + '</b><br>' + (made ? T('Password: the one you just typed. Tell the person, and ask them to change it under the menu (top right) &gt; Change my password.', 'Kata laluan: yang baru anda taip. Maklumkan kepada orang itu, dan minta dia menukarnya di menu (atas kanan) &gt; Tukar kata laluan saya.') : T('This person already had an account, so they use their existing password.', 'Orang ini sudah mempunyai akaun, jadi guna kata laluan sedia ada.')), noCancel: true});
     } catch (x) { fail(x); btn.disabled = false; }

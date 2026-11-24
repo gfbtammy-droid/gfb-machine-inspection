@@ -22,9 +22,10 @@ Web app for the daily machine inspection checklists under procedure P07 (Prevent
 - `index.html` the whole app. `config.js` Supabase URL and public (anon) key only. `vendor/` Supabase library, plus jsPDF and jsPDF-AutoTable (MIT licence) for the Download PDF button.
 - `templates.json` the 8 standard checklists taken from the F52 workbook; loaded into the database the first time an Admin signs in. `img/` reference photos from the F52 workbook.
 - `setup.sql` database tables, rules and functions (safe to run more than once). It uses the GFB CMMS Supabase project for sign-in and adds its own `mic_...` tables; it does not change CMMS tables.
+- `supabase/functions/mic-create-user/` the small server-side function (deployed on Supabase) that lets an Admin create username accounts without any email being sent.
 - `tests/` click-through test with dummy data (`python3 tests/run.py`).
 
 ## Accounts
-An Admin adds people under Users > Add user: a username and password for staff without email, or an existing CMMS email account (no new password). Staff can also register themselves on the sign-in page and wait for an Admin to activate them. Each person is given one or more functions by tick box: Inspect (Done by), Check by, Verify by, Admin. An active CMMS admin is an Admin here automatically. Admin can reset the password of username accounts.
+An Admin adds people under Users > Add user: a username and password for staff without email, or an existing CMMS email account (no new password). Each person is given one or more functions by tick box: Inspect (Done by), Check by, Verify by, Admin. An active CMMS admin is an Admin here automatically. Admin can reset the password of username accounts.
 
 Never put the Supabase `service_role` key in this repository.
