@@ -256,7 +256,7 @@ function vLogin(msg) {
     '<button class="btn pri" style="width:100%" type="submit">' + (reg ? T('Create account', 'Daftar akaun') : T('Sign in', 'Log masuk')) + '</button>' +
     (reg ? '<p class="small muted">' + T('After you register, the Admin must activate your account before you can use the checklist.', 'Selepas mendaftar, Admin perlu mengaktifkan akaun anda sebelum anda boleh menggunakan senarai semak.') + '</p>'
          : '<p class="small" style="text-align:center"><a href="#" data-act="forgot">' + T('Forgot password?', 'Lupa kata laluan?') + '</a></p><p class="small muted" style="text-align:center;margin-bottom:0">' + T('No account yet? Ask your Admin to add you.', 'Belum ada akaun? Minta Admin tambah anda.') + '</p>') +
-    '</form><p style="text-align:center"><button class="btn sm" data-act="lang">' + (LANG === 'bm' ? 'English' : 'Bahasa Malaysia') + '</button></p></div>';
+    '</form><p style="text-align:center"><button class="btn sm" data-act="lang">' + (LANG === 'bm' ? 'English' : 'Bahasa Malaysia') + '</button> <a class="btn sm" href="guide.html?lang=' + LANG + '" target="_blank" rel="noopener">&#128214; ' + T('User guide', 'Panduan pengguna') + '</a></p></div>';
 }
 async function doAuth(f) {
   const reg = false;
@@ -803,8 +803,8 @@ document.addEventListener('click', async e => {
     else if (a === 'signout') { await sb.auth.signOut(); S.me = null; location.hash = ''; vLogin(); }
     else if (a === 'menu') {
       const bg = document.createElement('div'); bg.className = 'modal-bg';
-      bg.innerHTML = '<div class="modal"><h3>' + esc(S.me.name) + '</h3><div class="small muted" style="margin-bottom:12px">' + esc(S.me.login) + ' &middot; ' + esc(myFuncs()) + '</div><div style="display:grid;gap:8px"><button class="btn" data-act="chpw">' + T('Change my password', 'Tukar kata laluan saya') + '</button><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button><button class="btn" data-act="closem">' + T('Close', 'Tutup') + '</button></div></div>';
-      bg.addEventListener('click', x => { if (x.target === bg || x.target.closest('button')) bg.remove(); }); document.body.appendChild(bg);
+      bg.innerHTML = '<div class="modal"><h3>' + esc(S.me.name) + '</h3><div class="small muted" style="margin-bottom:12px">' + esc(S.me.login) + ' &middot; ' + esc(myFuncs()) + '</div><div style="display:grid;gap:8px"><a class="btn" href="guide.html?lang=' + LANG + '" target="_blank" rel="noopener">&#128214; ' + T('User guide', 'Panduan pengguna') + '</a><button class="btn" data-act="chpw">' + T('Change my password', 'Tukar kata laluan saya') + '</button><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button><button class="btn" data-act="closem">' + T('Close', 'Tutup') + '</button></div></div>';
+      bg.addEventListener('click', x => { if (x.target === bg || x.target.closest('button,a')) bg.remove(); }); document.body.appendChild(bg);
     }
     else if (a === 'chpw') changePw();
     else if (a === 'day') { S.date = d.n === '0' ? S.today : addDays(S.date, +d.n); if (S.date > S.today) S.date = S.today; await vToday(); }

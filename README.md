@@ -23,6 +23,7 @@ Web app for the daily machine inspection checklists under procedure P07 (Prevent
 - `templates.json` the 8 standard checklists taken from the F52 workbook; loaded into the database the first time an Admin signs in. `img/` reference photos from the F52 workbook.
 - `setup.sql` database tables, rules and functions (safe to run more than once). It uses the GFB CMMS Supabase project for sign-in and adds its own `mic_...` tables; it does not change CMMS tables.
 - `supabase/functions/mic-create-user/` the small server-side function (deployed on Supabase) that lets an Admin create username accounts without any email being sent.
+- `guide.html` the user guide in English and Bahasa Malaysia, with `guide/` screenshots (taken from the test copy, dummy names) and the two printable PDFs. Rebuild with `python3 tests/guide_shots.py` then `python3 tests/build_guide.py` whenever a screen or label changes.
 - `tests/` click-through test with dummy data (`python3 tests/run.py`).
 
 ## Accounts
