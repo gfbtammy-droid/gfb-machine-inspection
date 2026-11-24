@@ -18,7 +18,7 @@ def setup(ctx):
     pg = ctx.new_page()
     pg.route('**/vendor/supabase.js', lambda r: r.fulfill(body=FAKE, content_type='application/javascript'))
     pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)))
-    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text else None)
+    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text and 'new account' not in m.text else None)
     pg.goto('http://127.0.0.1:8765/index.html'); pg.wait_for_selector('#authf'); return pg
 def login(pg, user):
     pg.fill('[name=uid]', user); pg.fill('[name=pw]', 'x'); pg.click('#authf button[type=submit]'); pg.wait_for_selector('.grid')
@@ -103,7 +103,20 @@ with sync_playwright() as p:
     pg.click('.nav >> text=Checklists'); pg.click('.mcard >> text=Semi-Auto Packing Machine 3'); pg.wait_for_selector('[data-tf=rev]'); pg.screenshot(path=OUT + '/11-setup-desktop.png')
     pg.fill('[data-tf=rev]', '02'); pg.select_option('select[data-tf=status]', 'active'); pg.fill('[data-if=crit] >> nth=0', 'Intact, No dent, No Broken, Clean'); pg.click('[data-act=tsave] >> nth=0'); pg.wait_for_selector('.grid')
     check('Rev 02' in pg.locator('.mcard >> text=Semi-Auto Packing Machine 3').locator('xpath=..').inner_text(), 'template saved')
-    pg.click('.nav >> text=Users'); pg.wait_for_selector('.u-role'); pg.screenshot(path=OUT + '/12-users-desktop.png')
+    pg.click('.nav >> text=Users'); pg.wait_for_selector('.u-f'); check(pg.locator('tr[data-u]').count() == 4, '4 users listed')
+    # add a new username account
+    pg.click('[data-act=uadd]'); pg.fill('#uaddf [name=nm]', 'Mei Ling Tan'); pg.fill('#uaddf [name=uid]', 'meiling'); pg.click('#uaddf button[type=submit]')
+    check('at least 8 characters' in pg.locator('.toast').inner_text(), 'new account needs a password')
+    pg.fill('#uaddf [name=pw]', 'welcome123'); pg.check('#uaddf [name=fn][value=check]'); pg.screenshot(path=OUT + '/12a-add-user.png'); pg.click('#uaddf button[type=submit]')
+    pg.wait_for_selector('.modal >> text=User added'); pg.click('.modal [data-x="1"]'); check(pg.locator('tr[data-u]').count() == 5, 'new user appears in list')
+    row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Mei Ling Tan"]')); check(row.locator('.u-f:checked').count() == 2 and row.locator('.u-act').is_checked(), 'new user active with 2 functions')
+    check(pg.locator('.who').inner_text().startswith('Demo Admin'), 'admin still signed in after adding a user')
+    # give the operator a second function, and make a check-only user
+    row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Ali bin Abu"]')); row.locator('.u-f[value=verify]').check(); row.locator('[data-act=usave]').click(); pg.wait_for_selector('.toast >> text=Saved')
+    row = pg.locator('tr[data-u]', has=pg.locator('input.u-name[value="Siti QC"]')); row.locator('.u-f[value=fill]').uncheck(); row.locator('[data-act=usave]').click(); pg.wait_for_timeout(400)
+    pg.screenshot(path=OUT + '/12-users-desktop.png')
+    signout(pg); login(pg, 'siti'); pg.click('.mcard >> text=IBC'); pg.wait_for_selector('.f52'); check(pg.locator('[data-act=start]').count() == 0, 'check-only user cannot start an inspection'); check(pg.locator('.who').inner_text().endswith('Check by'), 'top bar shows functions')
+    signout(pg); login(pg, 'meiling'); check(pg.locator('.mcard').count() == 8, 'added user can sign in'); signout(pg); login(pg, 'admin@demo.my')
     pg.click('.nav >> text=Today'); pg.click('.mcard >> text=IBC'); pg.wait_for_selector('.f52'); pg.evaluate("window.__printed=false; window.print = () => { window.__printed = true };0")
     pg.click('[data-act=print][data-ph="1"]'); pg.wait_for_function('window.__printed === true', timeout=20000); pg.emulate_media(media='print'); pg.pdf(path=OUT + '/print-ibc-blank.pdf', prefer_css_page_size=True); pg.emulate_media(media='screen')
     signout(pg)

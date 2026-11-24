@@ -139,6 +139,9 @@ table.f52 td.rm{font-size:10px;text-align:left;max-width:110px}
 .modal h3{margin-bottom:8px;font-size:17px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:150px;z-index:80;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;max-width:92vw;font-weight:600;box-shadow:0 4px 18px rgba(0,0,0,.3)}
 .toast.bad{background:var(--bad);color:#fff}
+.fx{display:flex;gap:6px 14px;flex-wrap:wrap}
+.fx label{display:inline-flex;align-items:center;gap:5px;min-height:30px}
+.fx input{width:19px;height:19px}
 .ed-item{display:grid;grid-template-columns:1fr 1.4fr auto;gap:8px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--line)}
 @media (max-width:700px){.ed-item{grid-template-columns:1fr}}
 .ed-item textarea{min-height:42px}
@@ -197,9 +200,10 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&am
 let LANG = 'en'; try { LANG = localStorage.getItem('mic_lang') || 'en'; } catch (e) {}
 const T = (en, bm) => LANG === 'bm' ? bm : en;
 const S = {me: null, tpls: [], today: null, date: null, day: [], sheet: null, round: null, ans: {}, refs: {}, dirty: false, saving: false, savedAt: null, rec: null, ed: null, users: null, timer: null, poll: null, authTab: 'in'};
-const RANK = {operator: 1, checker: 2, verifier: 3, admin: 4};
-const rank = () => S.me && S.me.active ? RANK[S.me.role] || 0 : 0;
-const ROLE = () => ({operator: T('Operator (Done by)', 'Operator (Done by)'), checker: T('Checker (Check by)', 'Penyemak (Check by)'), verifier: T('Verifier (Verify by)', 'Pengesah (Verify by)'), admin: 'Admin'});
+const can = f => !!(S.me && S.me.active && (f === 'review' ? ['check', 'verify', 'admin'].some(x => (S.me.funcs || []).includes(x)) : (S.me.funcs || []).includes(f)));
+const FUNCS = ['fill', 'check', 'verify', 'admin'];
+const FUNC = () => ({fill: T('Inspect (Done by)', 'Periksa (Done by)'), check: 'Check by', verify: 'Verify by', admin: 'Admin'});
+const myFuncs = () => (S.me.funcs || []).map(f => ({fill: 'Done by', check: 'Check by', verify: 'Verify by', admin: 'Admin'}[f])).join(', ');
 const MSTAT = () => ({active: T('In use', 'Digunakan'), pending: T('Criteria pending', 'Kriteria belum muktamad'), not_in_use: T('Not in use', 'Tidak digunakan')});
 
 function fmtD(d) { if (!d) return ''; const p = String(d).slice(0, 10).split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
@@ -297,7 +301,7 @@ async function boot() {
     if (!S.me.active) return vPending();
     let b = await rpc('mic_boot');
     if (!b.templates.length) {
-      if (rank() < 4) { $('#app').innerHTML = '<div class="login"><div class="card" style="text-align:center"><p>' + T('The checklists have not been loaded yet. Please ask the Admin to sign in once.', 'Senarai semak belum dimuatkan. Sila minta Admin log masuk sekali.') + '</p><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button></div></div>'; return; }
+      if (!can('admin')) { $('#app').innerHTML = '<div class="login"><div class="card" style="text-align:center"><p>' + T('The checklists have not been loaded yet. Please ask the Admin to sign in once.', 'Senarai semak belum dimuatkan. Sila minta Admin log masuk sekali.') + '</p><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button></div></div>'; return; }
       const std = await (await fetch('templates.json', {cache: 'no-store'})).json();
       await rpc('mic_seed_templates', {p_data: std}); b = await rpc('mic_boot');
       toast(T('Standard F52 checklists loaded', 'Senarai semak F52 standard dimuatkan'));
@@ -309,9 +313,9 @@ async function boot() {
 
 /* ---------- shell + router ---------- */
 function shell(tab, html) {
-  const adm = rank() >= 4;
+  const adm = can('admin');
   const n = (h, l, k) => '<a href="#/' + h + '" class="' + (tab === k ? 'on' : '') + '">' + l + '</a>';
-  $('#app').innerHTML = '<div class="top"><div class="brand">' + T('Machine Inspection', 'Pemeriksaan Mesin') + ' <small>F52</small></div><div class="who" title="' + esc(S.me.login) + '">' + esc(S.me.name) + '<br>' + esc(ROLE()[S.me.role]) + '</div>' +
+  $('#app').innerHTML = '<div class="top"><div class="brand">' + T('Machine Inspection', 'Pemeriksaan Mesin') + ' <small>F52</small></div><div class="who" title="' + esc(S.me.login) + '">' + esc(S.me.name) + '<br>' + esc(myFuncs()) + '</div>' +
     '<button data-act="lang" aria-label="Language">' + (LANG === 'bm' ? 'EN' : 'BM') + '</button><button data-act="menu" aria-label="Account">&#9776;</button></div>' +
     '<nav class="nav">' + n('today', T('Today', 'Hari ini'), 'today') + n('records', T('Records', 'Rekod'), 'records') + (adm ? n('setup', T('Checklists', 'Senarai semak'), 'setup') + n('users', T('Users', 'Pengguna'), 'users') : '') + '</nav><main>' + html + '</main>';
 }
@@ -324,8 +328,8 @@ async function route() {
     if (p[0] === 'sheet' && tpl(p[1])) return await vSheet(p[1], p[2] || S.today);
     if (p[0] === 'round' && tpl(p[1])) return await vRound(p[1], p[2], p[3]);
     if (p[0] === 'records') return await vRecords();
-    if (p[0] === 'setup' && rank() >= 4) return vSetup(p[1]);
-    if (p[0] === 'users' && rank() >= 4) return await vUsers();
+    if (p[0] === 'setup' && can('admin')) return vSetup(p[1]);
+    if (p[0] === 'users' && can('admin')) return await vUsers();
     return await vToday();
   } catch (e) { fail(e); }
 }
@@ -358,14 +362,14 @@ async function vToday() {
   const toVerify = S.day.filter(d => d.status === 'open' && d.rounds.length && d.rounds.every(r => r.status === 'checked')).length;
   shell('today', '<div class="datebar"><button class="btn sm" data-act="day" data-n="-1" aria-label="Previous day">&#9664;</button><input type="date" id="daypick" value="' + S.date + '" max="' + S.today + '"><button class="btn sm" data-act="day" data-n="1" aria-label="Next day"' + (S.date >= S.today ? ' disabled' : '') + '>&#9654;</button>' +
     (S.date !== S.today ? '<button class="btn sm" data-act="day" data-n="0">' + T('Today', 'Hari ini') + '</button>' : '') + '<span class="muted">' + fmtD(S.date) + '</span><span class="sp"></span><button class="btn sm" data-act="refresh">&#8635; ' + T('Refresh', 'Muat semula') + '</button></div>' +
-    (rank() >= 2 && toCheck ? '<div class="banner info">' + toCheck + ' ' + T('round(s) waiting for Check by', 'pusingan menunggu Check by') + '</div>' : '') +
-    (rank() >= 3 && toVerify ? '<div class="banner info">' + toVerify + ' ' + T('checklist(s) ready for Verify by', 'senarai semak sedia untuk Verify by') + '</div>' : '') +
+    (can('check') && toCheck ? '<div class="banner info">' + toCheck + ' ' + T('round(s) waiting for Check by', 'pusingan menunggu Check by') + '</div>' : '') +
+    (can('verify') && toVerify ? '<div class="banner info">' + toVerify + ' ' + T('checklist(s) ready for Verify by', 'senarai semak sedia untuk Verify by') + '</div>' : '') +
     '<div class="grid">' + cards + '</div>');
   S.poll = setInterval(() => { if (!document.hidden && !$('.modal-bg')) vToday().catch(() => {}); }, 30000);
 }
 
 /* ---------- Sheet (one machine, one day) ---------- */
-function canStart(t, sh, date) { return rank() >= 1 && t.status !== 'not_in_use' && (!sh || sh.status !== 'verified') && (rank() >= 4 || (date <= S.today && date >= addDays(S.today, -1))); }
+function canStart(t, sh, date) { return can('fill') && t.status !== 'not_in_use' && (!sh || sh.status !== 'verified') && (can('admin') || (date <= S.today && date >= addDays(S.today, -1))); }
 function stChip(r) { return r.status === 'draft' ? '<span class="chip warn">' + T('In progress', 'Sedang diisi') + '</span>' : r.status === 'submitted' ? '<span class="chip info">' + T('Waiting for check', 'Menunggu semakan') + '</span>' : '<span class="chip ok">&#10003; ' + T('Checked', 'Disemak') + '</span>'; }
 async function vSheet(key, date) {
   const sh = await rpc('mic_sheet', {p_machine: key, p_date: date}); S.sheet = sh;
@@ -382,14 +386,14 @@ async function vSheet(key, date) {
     (ver ? '<div class="banner info" style="margin-bottom:0">Verify by: ' + esc(sh.verify_name) + ' &middot; ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' &middot; ' + esc(sh.verify_note) : '') + '</div>' : '') +
     '<div class="row" style="margin-top:12px">' +
     (canStart(t, sh, date) ? '<button class="btn pri" data-act="start" data-k="' + key + '" data-d="' + date + '">+ ' + (rs.some(r => r.status === 'draft' && r.done_by === S.me.id) ? T('Continue my inspection', 'Sambung pemeriksaan saya') : T('Start inspection round', 'Mula pusingan pemeriksaan')) + '</button>' : '') +
-    (rank() >= 3 && sh && !ver ? '<button class="btn pri" data-act="verify" ' + (allChecked && !mine ? '' : 'disabled') + ' title="' + (mine ? T('You filled in or checked this checklist, so another person must verify it', 'Anda mengisi atau menyemak senarai ini, jadi orang lain perlu mengesahkannya') : '') + '">&#10003; ' + T('Verify checklist (Verify by)', 'Sahkan senarai semak (Verify by)') + '</button>' : '') +
-    (rank() >= 4 && ver ? '<button class="btn bad" data-act="reopen">' + T('Reopen', 'Buka semula') + '</button>' : '') + '</div></div>';
+    (can('verify') && sh && !ver ? '<button class="btn pri" data-act="verify" ' + (allChecked && !mine ? '' : 'disabled') + ' title="' + (mine ? T('You filled in or checked this checklist, so another person must verify it', 'Anda mengisi atau menyemak senarai ini, jadi orang lain perlu mengesahkannya') : '') + '">&#10003; ' + T('Verify checklist (Verify by)', 'Sahkan senarai semak (Verify by)') + '</button>' : '') +
+    (can('admin') && ver ? '<button class="btn bad" data-act="reopen">' + T('Reopen', 'Buka semula') + '</button>' : '') + '</div></div>';
   h += '<h3 style="margin:16px 0 8px">' + T('Inspection rounds', 'Pusingan pemeriksaan') + ' (' + rs.length + ')</h3>';
   if (!rs.length) h += '<div class="card muted">' + T('No inspection recorded for this date yet. Inspect before production starts and at every product change-over.', 'Belum ada pemeriksaan direkod untuk tarikh ini. Periksa sebelum pengeluaran bermula dan pada setiap pertukaran produk.') + '</div>';
   h += rs.map(r => '<div class="rcard"><div><b>' + T('Round', 'Pusingan') + ' ' + r.seq + '</b> &middot; <span class="num">' + esc(r.time || '--:--') + '</span> &middot; Batch ' + esc(r.batch || '-') + '<div class="small muted">Done by: ' + esc(r.done_name) + (r.check_name ? ' &middot; Check by: ' + esc(r.check_name) + ' ' + fmtDT(r.check_at) : '') + '</div>' +
     (r.note ? '<div class="small" style="color:var(--warn)">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') + ': ' : T('Note', 'Catatan') + ': ') + esc(r.note) + '</div>' : '') + '</div><span class="sp"></span>' +
     stChip(r) + (r.ng ? '<span class="chip bad">' + r.ng + ' ' + T('Not OK', 'Tidak OK') + '</span>' : '') +
-    '<a class="btn sm' + (r.status === 'draft' && r.done_by === S.me.id || r.status === 'submitted' && rank() >= 2 && r.done_by !== S.me.id ? ' pri' : '') + '" href="#/round/' + key + '/' + date + '/' + r.id + '">' + (r.status === 'draft' && r.done_by === S.me.id ? T('Continue', 'Sambung') : r.status === 'submitted' && rank() >= 2 && r.done_by !== S.me.id ? T('Check', 'Semak') : T('View', 'Lihat')) + '</a></div>').join('');
+    '<a class="btn sm' + (r.status === 'draft' && r.done_by === S.me.id || r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? ' pri' : '') + '" href="#/round/' + key + '/' + date + '/' + r.id + '">' + (r.status === 'draft' && r.done_by === S.me.id ? T('Continue', 'Sambung') : r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? T('Check', 'Semak') : T('View', 'Lihat')) + '</a></div>').join('');
   h += '<h3 style="margin:18px 0 8px">' + T('Form view', 'Paparan borang') + ' (' + esc(t.formNo) + ')</h3><div class="f52-wrap">' + f52Table(t, rs, sh, date, {screen: true, photos: true}) + '</div>';
   if (sh && sh.log && sh.log.length) h += '<details style="margin-top:14px"><summary class="muted">' + T('Change history', 'Sejarah perubahan') + ' (' + sh.log.length + ')</summary><div class="tbl-wrap" style="margin-top:8px"><table class="list"><tr><th>' + T('When', 'Bila') + '</th><th>' + T('Who', 'Siapa') + '</th><th>' + T('What', 'Apa') + '</th></tr>' +
     sh.log.map(l => '<tr><td class="nowrap">' + fmtDT(l.at) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.act.replace(/_/g, ' ')) + (l.detail && l.detail.round ? ' #' + l.detail.round : '') + (l.detail && (l.detail.reason || l.detail.note) ? ' &ndash; ' + esc(l.detail.reason || l.detail.note) : '') + '</td></tr>').join('') + '</table></div></details>';
@@ -581,13 +585,13 @@ async function vRound(key, date, rid) {
   const r = sh && sh.rounds.find(x => x.id === rid);
   if (!r) return go('sheet/' + key + '/' + date);
   S.round = r; S.ans = JSON.parse(JSON.stringify(r.items || {})); S.refs = Object.assign({}, r.refs || {}); S.dirty = false; S.savedAt = null;
-  const t = sh.template, edit = r.status === 'draft' && (r.done_by === S.me.id || rank() >= 4) && sh.status !== 'verified';
+  const t = sh.template, edit = r.status === 'draft' && (r.done_by === S.me.id || can('admin')) && sh.status !== 'verified';
   S.editing = edit; S.rkey = key; S.rdate = date;
   let time = r.time || '', batch = r.batch || '';
   if (edit) { try { const l = JSON.parse(localStorage.getItem(draftKey(rid)) || 'null'); if (l && l.ts > new Date(r.updated_at).getTime()) { S.ans = l.ans; S.refs = l.refs || {}; time = l.time || time; S.dirty = true; } } catch (e) {} }
   if (edit && !time) { time = nowHM(); S.dirty = true; }
-  const canCheck = rank() >= 2 && r.status === 'submitted' && r.done_by !== S.me.id && sh.status !== 'verified';
-  const canReturn = rank() >= 2 && sh.status !== 'verified' && (r.status === 'submitted' || r.status === 'checked' && (r.check_by === S.me.id || rank() >= 4));
+  const canCheck = can('check') && r.status === 'submitted' && r.done_by !== S.me.id && sh.status !== 'verified';
+  const canReturn = can('check') && sh.status !== 'verified' && (r.status === 'submitted' || r.status === 'checked' && (r.check_by === S.me.id || can('admin')));
   let h = '<div class="row" style="margin-bottom:10px"><a class="btn sm" href="#/sheet/' + key + '/' + date + '">&#9664; ' + T('Back', 'Kembali') + '</a><span class="sp"></span>' + stChip(r) + '</div>' +
     '<div class="card"><h2>' + esc(t.name) + ' &ndash; ' + T('Round', 'Pusingan') + ' ' + r.seq + '</h2><div class="small muted">' + esc(t.formNo) + ' Rev ' + esc(t.rev) + ' &middot; ' + fmtD(date) + ' &middot; Done by: ' + esc(r.done_name) + '</div>' +
     (r.note ? '<div class="banner' + (r.status === 'draft' ? ' bad' : ' info') + '">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') : T('Checker note', 'Catatan penyemak')) + ': ' + esc(r.note) + '</div>' : '') +
@@ -668,7 +672,7 @@ async function vRecords() {
   shell('records', '<div class="card" style="margin-bottom:12px"><div class="row" style="align-items:flex-end"><label class="f" style="margin:0"><span>' + T('From', 'Dari') + '</span><input type="date" id="rf" value="' + f.from + '"></label><label class="f" style="margin:0"><span>' + T('To', 'Hingga') + '</span><input type="date" id="rt" value="' + f.to + '"></label>' +
     '<label class="f" style="margin:0"><span>' + T('Machine', 'Mesin') + '</span><select id="rm"><option value="">' + T('All', 'Semua') + '</option>' + S.tpls.map(t => '<option value="' + t.key + '"' + (f.m === t.key ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('') + '</select></label>' +
     '<label class="f" style="margin:0"><span>Status</span><select id="rs"><option value="">' + T('All', 'Semua') + '</option><option value="open"' + (f.st === 'open' ? ' selected' : '') + '>' + T('Not verified yet', 'Belum disahkan') + '</option><option value="verified"' + (f.st === 'verified' ? ' selected' : '') + '>' + T('Verified', 'Disahkan') + '</option><option value="ng"' + (f.st === 'ng' ? ' selected' : '') + '>' + T('With Not OK parts', 'Ada bahagian Tidak OK') + '</option></select></label>' +
-    '<button class="btn pri" data-act="recgo">' + T('Show', 'Papar') + '</button>' + (rank() >= 2 ? '<button class="btn" data-act="csv">&#11015; ' + T('Download (Excel CSV)', 'Muat turun (Excel CSV)') + '</button>' : '') + '</div></div>' +
+    '<button class="btn pri" data-act="recgo">' + T('Show', 'Papar') + '</button>' + (can('review') ? '<button class="btn" data-act="csv">&#11015; ' + T('Download (Excel CSV)', 'Muat turun (Excel CSV)') + '</button>' : '') + '</div></div>' +
     '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Date', 'Tarikh') + '</th><th>' + T('Machine', 'Mesin') + '</th><th>Form</th><th>' + T('Rounds', 'Pusingan') + '</th><th>Done by</th><th>Check by</th><th>Verify by</th><th>Status</th></tr>' +
     (rows.length ? rows.map(d => '<tr class="click" data-act="open" data-h="sheet/' + d.machine + '/' + d.date + '"><td class="nowrap num">' + fmtD(d.date) + '</td><td>' + esc(d.name) + '</td><td class="nowrap">' + esc(d.formNo) + ' Rev ' + esc(d.rev) + '</td><td>' + d.rounds.length + '</td><td>' + esc([...new Set(d.rounds.map(r => r.done_name))].join(', ')) + '</td><td>' + esc([...new Set(d.rounds.map(r => r.check_name).filter(Boolean))].join(', ')) + '</td><td>' + esc(d.verify_name || '') + '</td><td>' + (d.status === 'verified' ? '<span class="chip ok">&#10003; ' + T('Verified', 'Disahkan') + '</span>' : roundChips(d.rounds)) + (d.status === 'verified' && d.rounds.some(r => r.ng) ? ' <span class="chip bad">' + d.rounds.reduce((a, r) => a + r.ng, 0) + ' ' + T('Not OK', 'Tidak OK') + '</span>' : '') + '</td></tr>').join('')
       : '<tr><td colspan="8" class="muted">' + T('No checklist in this period.', 'Tiada senarai semak dalam tempoh ini.') + '</td></tr>') + '</table></div>');
@@ -725,12 +729,49 @@ async function saveTpl() {
 async function vUsers() {
   S.users = await rpc('mic_users_list');
   const wait = S.users.filter(u => !u.active).length;
-  shell('users', '<h2 style="margin-bottom:6px">' + T('Users', 'Pengguna') + '</h2><p class="small muted">' + T('Staff create their own account on the sign-in page (New account). Then activate them here and choose a role: Operator fills in (Done by), Checker also signs Check by (QC Inspector), Verifier also signs Verify by (Production Executive).', 'Staf mendaftar akaun sendiri di halaman log masuk (Akaun baharu). Kemudian aktifkan di sini dan pilih peranan: Operator mengisi (Done by), Penyemak juga menandatangani Check by (QC Inspector), Pengesah juga menandatangani Verify by (Production Executive).') + '</p>' +
-    (wait ? '<div class="banner">' + wait + ' ' + T('account(s) waiting for activation', 'akaun menunggu pengaktifan') + '</div>' : '') +
-    '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Name on checklist', 'Nama pada senarai semak') + '</th><th>' + T('Sign-in', 'Log masuk') + '</th><th>' + T('Role', 'Peranan') + '</th><th>' + T('Active', 'Aktif') + '</th><th></th></tr>' +
-    S.users.map(u => '<tr data-u="' + u.id + '"><td><input type="text" class="u-name" value="' + esc(u.name) + '" maxlength="80" aria-label="Name"></td><td>' + esc(u.login) + '<div class="small muted">' + (u.username ? T('username', 'nama pengguna') : 'email') + ' &middot; ' + fmtD(u.created_at) + '</div></td>' +
-      '<td><select class="u-role" aria-label="Role">' + Object.entries(ROLE()).map(([k, v]) => '<option value="' + k + '"' + (u.role === k ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></td><td><input type="checkbox" class="u-act" aria-label="Active" style="width:22px;height:22px"' + (u.active ? ' checked' : '') + '></td>' +
+  const ticks = u => '<div class="fx">' + FUNCS.map(f => '<label class="small nowrap"><input type="checkbox" class="u-f" value="' + f + '"' + ((u.funcs || []).includes(f) ? ' checked' : '') + '> ' + FUNC()[f] + '</label>').join('') + '</div>';
+  shell('users', '<div class="row" style="margin-bottom:6px"><h2>' + T('Users', 'Pengguna') + '</h2><span class="sp"></span><button class="btn pri" data-act="uadd">+ ' + T('Add user', 'Tambah pengguna') + '</button></div><p class="small muted">' + T('Tick every function the person may do. Inspect = fill in the checklist (Done by). Check by = sign each round (QC Inspector). Verify by = verify the day checklist (Production Executive). Admin = users and checklist setup. A person still cannot check their own round, or verify a checklist they filled in or checked.', 'Tandakan setiap fungsi yang dibenarkan. Periksa = mengisi senarai semak (Done by). Check by = menandatangani setiap pusingan (QC Inspector). Verify by = mengesahkan senarai semak harian (Production Executive). Admin = pengguna dan tetapan senarai semak. Seseorang tetap tidak boleh menyemak pusingannya sendiri, atau mengesahkan senarai semak yang diisi atau disemaknya sendiri.') + '</p>' +
+    (wait ? '<div class="banner">' + wait + ' ' + T('account(s) not active', 'akaun tidak aktif') + '</div>' : '') +
+    '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Name on checklist', 'Nama pada senarai semak') + '</th><th>' + T('Sign-in', 'Log masuk') + '</th><th>' + T('Functions', 'Fungsi') + '</th><th>' + T('Active', 'Aktif') + '</th><th></th></tr>' +
+    S.users.map(u => '<tr data-u="' + u.id + '"><td><input type="text" class="u-name" value="' + esc(u.name) + '" maxlength="80" aria-label="Name" style="min-width:140px"></td><td>' + esc(u.login) + '<div class="small muted">' + (u.username ? T('username', 'nama pengguna') : 'email') + ' &middot; ' + fmtD(u.created_at) + '</div></td>' +
+      '<td>' + ticks(u) + '</td><td><input type="checkbox" class="u-act" aria-label="Active" style="width:22px;height:22px"' + (u.active ? ' checked' : '') + '></td>' +
       '<td class="nowrap"><button class="btn sm pri" data-act="usave">' + T('Save', 'Simpan') + '</button> ' + (u.username ? '<button class="btn sm" data-act="upw">' + T('Reset password', 'Set semula kata laluan') + '</button>' : '') + '</td></tr>').join('') + '</table></div>');
+}
+function addUserForm() {
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = '<form class="modal" id="uaddf"><h3>' + T('Add user', 'Tambah pengguna') + '</h3>' +
+    '<label class="f"><span>' + T('Full name (as it should appear on the checklist)', 'Nama penuh (seperti dipapar pada senarai semak)') + '</span><input type="text" name="nm" required maxlength="80"></label>' +
+    '<label class="f"><span>' + T('Username, or company email', 'Nama pengguna, atau emel syarikat') + '</span><input type="text" name="uid" required autocapitalize="none" spellcheck="false" autocomplete="off"></label>' +
+    '<label class="f"><span>' + T('Password (at least 8 characters). Leave empty if the person already has a CMMS account.', 'Kata laluan (sekurang-kurangnya 8 aksara). Biarkan kosong jika orang ini sudah ada akaun CMMS.') + '</span><input type="text" name="pw" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' +
+    '<div class="f"><span>' + T('Functions', 'Fungsi') + '</span><div class="fx">' + FUNCS.map(f => '<label class="small nowrap" style="font-weight:400;color:var(--ink)"><input type="checkbox" name="fn" value="' + f + '"' + (f === 'fill' ? ' checked' : '') + '> ' + FUNC()[f] + '</label>').join('') + '</div></div>' +
+    '<div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-x="0">' + T('Cancel', 'Batal') + '</button><button class="btn pri" type="submit">' + T('Add user', 'Tambah pengguna') + '</button></div></form>';
+  document.body.appendChild(bg); $('[name=nm]', bg).focus();
+  bg.addEventListener('click', e => { if (e.target.closest('[data-x="0"]')) bg.remove(); });
+  $('form', bg).addEventListener('submit', async e => {
+    e.preventDefault(); const f = e.target, btn = $('button[type=submit]', f);
+    const name = f.nm.value.trim(), id = f.uid.value.trim().replace(/\s+/g, ''), pw = f.pw.value, funcs = $$('[name=fn]:checked', f).map(x => x.value);
+    if (!/^[A-Za-z0-9._@+-]{3,80}$/.test(id)) return toast(T('Username: letters and numbers only, at least 3 characters', 'Nama pengguna: huruf dan nombor sahaja, sekurang-kurangnya 3 aksara'), true);
+    if (!funcs.length) return toast(T('Choose at least one function', 'Pilih sekurang-kurangnya satu fungsi'), true);
+    btn.disabled = true;
+    try {
+      const args = {p_login: id, p_name: name, p_funcs: funcs, p_active: true};
+      let r = await rpc('mic_add_user', args), made = false;
+      if (r === 'no_account') {
+        if (pw.length < 8) throw new Error(T('This is a new account, so please set a password of at least 8 characters', 'Ini akaun baharu, sila tetapkan kata laluan sekurang-kurangnya 8 aksara'));
+        // a separate, throw-away connection creates the account, so the Admin stays signed in
+        const tmp = supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'gfb-mic-tmp'}});
+        const {data, error} = await tmp.auth.signUp({email: loginId(id), password: pw, options: {data: {name}}});
+        if (error) throw error;
+        if (!data || !data.user) throw new Error(T('The account could not be created', 'Akaun tidak dapat didaftar'));
+        try { await tmp.auth.signOut(); } catch (x) {}
+        r = await rpc('mic_add_user', args); made = true;
+      }
+      if (r === 'exists') throw new Error(T('This person is already in the list below', 'Orang ini sudah ada dalam senarai di bawah'));
+      if (r !== 'added') throw new Error(T('The account was created but is waiting for email confirmation. Ask the person to confirm, then add them again.', 'Akaun didaftar tetapi menunggu pengesahan emel. Minta orang itu sahkan, kemudian tambah semula.'));
+      bg.remove(); await vUsers();
+      await ask({title: T('User added', 'Pengguna ditambah'), body: '<b>' + esc(name) + '</b><br>' + T('Sign-in', 'Log masuk') + ': <b>' + esc(id.toLowerCase()) + '</b><br>' + (made ? T('Password: the one you just typed. Tell the person, and ask them to change it under the menu (top right) &gt; Change my password.', 'Kata laluan: yang baru anda taip. Maklumkan kepada orang itu, dan minta dia menukarnya di menu (atas kanan) &gt; Tukar kata laluan saya.') : T('This person already had an account, so they use their existing password.', 'Orang ini sudah mempunyai akaun, jadi guna kata laluan sedia ada.')), noCancel: true});
+    } catch (x) { fail(x); btn.disabled = false; }
+  });
 }
 
 /* ---------- events ---------- */
@@ -763,7 +804,7 @@ document.addEventListener('click', async e => {
     else if (a === 'signout') { await sb.auth.signOut(); S.me = null; location.hash = ''; vLogin(); }
     else if (a === 'menu') {
       const bg = document.createElement('div'); bg.className = 'modal-bg';
-      bg.innerHTML = '<div class="modal"><h3>' + esc(S.me.name) + '</h3><div class="small muted" style="margin-bottom:12px">' + esc(S.me.login) + ' &middot; ' + esc(ROLE()[S.me.role]) + '</div><div style="display:grid;gap:8px"><button class="btn" data-act="chpw">' + T('Change my password', 'Tukar kata laluan saya') + '</button><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button><button class="btn" data-act="closem">' + T('Close', 'Tutup') + '</button></div></div>';
+      bg.innerHTML = '<div class="modal"><h3>' + esc(S.me.name) + '</h3><div class="small muted" style="margin-bottom:12px">' + esc(S.me.login) + ' &middot; ' + esc(myFuncs()) + '</div><div style="display:grid;gap:8px"><button class="btn" data-act="chpw">' + T('Change my password', 'Tukar kata laluan saya') + '</button><button class="btn" data-act="signout">' + T('Sign out', 'Log keluar') + '</button><button class="btn" data-act="closem">' + T('Close', 'Tutup') + '</button></div></div>';
       bg.addEventListener('click', x => { if (x.target === bg || x.target.closest('button')) bg.remove(); }); document.body.appendChild(bg);
     }
     else if (a === 'chpw') changePw();
@@ -789,7 +830,8 @@ document.addEventListener('click', async e => {
     else if (a === 'tdel') { S.ed.sections[+d.s].items.splice(+d.i, 1); vSetup(S.ed.key); }
     else if (a === 'tdelsec') { if (await ask({title: T('Delete this whole section?', 'Padam keseluruhan seksyen ini?'), ok: T('Delete', 'Padam'), danger: true})) { S.ed.sections.splice(+d.s, 1); vSetup(S.ed.key); } }
     else if (a === 'tmove') { const arr = S.ed.sections[+d.s].items, i = +d.i, j = i + (+d.n); [arr[i], arr[j]] = [arr[j], arr[i]]; vSetup(S.ed.key); }
-    else if (a === 'usave') { const tr = el.closest('tr'); await rpc('mic_set_user', {p_id: tr.dataset.u, p_name: $('.u-name', tr).value, p_role: $('.u-role', tr).value, p_active: $('.u-act', tr).checked}); toast(T('Saved', 'Disimpan')); await vUsers(); }
+    else if (a === 'uadd') addUserForm();
+    else if (a === 'usave') { const tr = el.closest('tr'); await rpc('mic_save_user', {p_id: tr.dataset.u, p_name: $('.u-name', tr).value, p_funcs: $$('.u-f:checked', tr).map(x => x.value), p_active: $('.u-act', tr).checked}); if (tr.dataset.u === S.me.id) S.me = await rpc('mic_me', {p_name: null}); toast(T('Saved', 'Disimpan')); await vUsers(); }
     else if (a === 'upw') { const tr = el.closest('tr'); const p = await ask({title: T('Set a new password for ', 'Tetapkan kata laluan baharu untuk ') + $('.u-name', tr).value, input: 'password', label: T('New password (at least 8 characters)', 'Kata laluan baharu (sekurang-kurangnya 8 aksara)'), required: true, ok: T('Set password', 'Tetapkan')}); if (p) { await rpc('mic_reset_password', {p_id: tr.dataset.u, p_password: p}); toast(T('New password set. Tell the staff member.', 'Kata laluan baharu ditetapkan. Maklumkan kepada staf.')); } }
   } catch (x) { fail(x); if (el.disabled) el.disabled = false; }
 });

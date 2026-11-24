@@ -25,6 +25,6 @@ Web app for the daily machine inspection checklists under procedure P07 (Prevent
 - `tests/` click-through test with dummy data (`python3 tests/run.py`).
 
 ## Accounts
-Staff register on the sign-in page (New account) with a username or company email, then an Admin activates them and sets the role. An active CMMS admin is an Admin here automatically. Admin can reset the password of username accounts.
+An Admin adds people under Users > Add user: a username and password for staff without email, or an existing CMMS email account (no new password). Staff can also register themselves on the sign-in page and wait for an Admin to activate them. Each person is given one or more functions by tick box: Inspect (Done by), Check by, Verify by, Admin. An active CMMS admin is an Admin here automatically. Admin can reset the password of username accounts.
 
 Never put the Supabase `service_role` key in this repository.
