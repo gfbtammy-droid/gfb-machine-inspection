@@ -317,7 +317,7 @@ function shell(tab, html) {
   const n = (h, l, k) => '<a href="#/' + h + '" class="' + (tab === k ? 'on' : '') + '">' + l + '</a>';
   $('#app').innerHTML = '<div class="top"><div class="brand">' + T('Machine Inspection', 'Pemeriksaan Mesin') + ' <small>F52</small></div><div class="who" title="' + esc(S.me.login) + '">' + esc(S.me.name) + '<br>' + esc(myFuncs()) + '</div>' +
     '<button data-act="lang" aria-label="Language">' + (LANG === 'bm' ? 'EN' : 'BM') + '</button><button data-act="menu" aria-label="Account">&#9776;</button></div>' +
-    '<nav class="nav">' + n('today', T('Today', 'Hari ini'), 'today') + n('records', T('Records', 'Rekod'), 'records') + (adm ? n('setup', T('Checklists', 'Senarai semak'), 'setup') + n('users', T('Users', 'Pengguna'), 'users') : '') + '</nav><main>' + html + '</main>';
+    '<nav class="nav">' + n('today', T('Today', 'Hari ini'), 'today') + n('records', T('Records', 'Rekod'), 'records') + (adm ? n('setup', T('Checklists', 'Senarai semak'), 'setup') + n('users', T('Users', 'Pengguna'), 'users') : '') + '<a href="guide.html?lang=' + LANG + '" target="_blank" rel="noopener">&#128214; ' + T('Guide', 'Panduan') + '</a></nav><main>' + html + '</main>';
 }
 function go(h) { if (location.hash === '#/' + h) route(); else location.hash = '#/' + h; }
 async function route() {
