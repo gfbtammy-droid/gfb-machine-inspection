@@ -19,7 +19,7 @@ Web app for the daily machine inspection checklists under procedure P07 (Prevent
 - Admin can edit criteria, revision and effective date per machine (Checklists tab) and manage users (Users tab).
 
 ## Files
-- `index.html` the whole app. `config.js` Supabase URL and public (anon) key only. `vendor/` Supabase library.
+- `index.html` the whole app. `config.js` Supabase URL and public (anon) key only. `vendor/` Supabase library, plus jsPDF and jsPDF-AutoTable (MIT licence) for the Download PDF button.
 - `templates.json` the 8 standard checklists taken from the F52 workbook; loaded into the database the first time an Admin signs in. `img/` reference photos from the F52 workbook.
 - `setup.sql` database tables, rules and functions (safe to run more than once). It uses the GFB CMMS Supabase project for sign-in and adds its own `mic_...` tables; it does not change CMMS tables.
 - `tests/` click-through test with dummy data (`python3 tests/run.py`).
