@@ -135,7 +135,7 @@ with sync_playwright() as p:
     signout(pg)
     check(pg.locator('[data-v=reg]').count() == 0 and 'Ask your Admin' in pg.locator('#app').inner_text(), 'no self-registration on sign-in page')
     pg.click('[data-act=lang]'); check('Minta Admin' in pg.locator('#app').inner_text(), 'BM toggle')
-    g = desk.new_page(); g.goto('http://127.0.0.1:8765/guide.html?lang=bm'); check(g.locator('.lang[data-l=bm] .ch').count() == 9 and g.locator('.lang[data-l=en]').is_hidden(), 'guide opens in BM')
+    g = desk.new_page(); g.goto('http://127.0.0.1:8765/guide.html?lang=bm'); check(g.locator('.lang[data-l=bm] .ch').count() == 10 and g.locator('.lang[data-l=en]').is_hidden(), 'guide opens in BM')
     check(g.evaluate("Array.from(document.querySelectorAll('.lang[data-l=bm] img')).map(i => fetch(i.src).then(r => r.ok))").__len__() > 20, 'guide images listed'); g.screenshot(path=OUT + '/14-guide.png')
     b.close()
 print('passed %d checks, %d problems' % (ok, len(errs))); [print(' -', e) for e in errs]; sys.exit(1 if errs else 0)

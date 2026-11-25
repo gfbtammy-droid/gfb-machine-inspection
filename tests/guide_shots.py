@@ -9,7 +9,7 @@ class Q(http.server.SimpleHTTPRequestHandler):
 srv = http.server.ThreadingHTTPServer(('127.0.0.1', 8766), functools.partial(Q, directory=ROOT)); threading.Thread(target=srv.serve_forever, daemon=True).start()
 FAKE = open(os.path.join(ROOT, 'tests', 'fake-supabase.js')).read()
 PHONE = {'width': 390, 'height': 760}; DESK = {'width': 1180, 'height': 760}
-TXT = {'en': dict(rm='Small dent on the valve handle', ret='Please check the butterfly valve again', nm='Fadzil bin Hassan', dn='Handle only, no product contact. Valve closes fully. F45 raised.'), 'bm': dict(rm='Kemek kecil pada pemegang injap', ret='Sila periksa semula butterfly valve', nm='Fadzil bin Hassan', dn='Pemegang sahaja, tiada sentuhan produk. Injap tutup rapat. F45 dibuat.')}
+TXT = {'en': dict(rm='Small dent on the valve handle', ret='Please check the butterfly valve again', nm='Fadzil bin Hassan', dn='Handle only, no product contact. Valve closes fully. F45 raised.', dl='Test record made during training'), 'bm': dict(rm='Kemek kecil pada pemegang injap', ret='Sila periksa semula butterfly valve', nm='Fadzil bin Hassan', dn='Pemegang sahaja, tiada sentuhan produk. Injap tutup rapat. F45 dibuat.', dl='Rekod ujian semasa latihan')}
 def run(lang, b):
     ctx = b.new_context(viewport=PHONE, device_scale_factor=2, locale='en-GB'); ctx.add_init_script("try{localStorage.setItem('mic_lang','%s')}catch(e){}" % lang)
     pg = ctx.new_page(); pg.route('**/vendor/supabase.js', lambda r: r.fulfill(body=FAKE, content_type='application/javascript'))
@@ -39,11 +39,14 @@ def run(lang, b):
     signout(); login('ali'); drum(); shot('sheet-returned', 700); pg.click('.rcard a.btn'); pg.wait_for_selector('.banner.bad'); shot('returned', 480)
     pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
     signout(); login('siti'); drum(); pg.click('.rcard a.btn'); pg.wait_for_selector('.rv'); pg.fill('.rv textarea', TXT[lang]['dn']); pg.click('.rv [data-s=minor][data-d=go]'); pg.wait_for_selector('.rv .chip.ok'); pg.evaluate("document.querySelector('.rv').scrollIntoView({block:'center'});0"); shot('decision-done'); pg.click('[data-act=check]'); pg.wait_for_selector('.modal'); shot('check-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
+    signout(); login('ali'); drum(); pg.click('.rcard a.btn'); pg.wait_for_selector('.rv'); pg.evaluate("document.querySelector('.rv').scrollIntoView({block:'center'});0"); shot('decision-seen', 600)
     signout(); login('farah@demo.my'); shot('today-verifier', 420); drum(); shot('sheet-verify', 620); pg.click('[data-act=verify]'); pg.wait_for_selector('.modal'); shot('verify-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.banner.info'); shot('sheet-verified', 700)
     pg.click('[data-act=menu]'); pg.wait_for_selector('.modal'); shot('menu', 560); pg.click('.modal [data-act=closem]')
     pg.set_viewport_size(DESK); pg.evaluate("document.querySelector('.f52-wrap').scrollIntoView({block:'start'});0"); shot('form-view', 520)
     pg.click('.nav a >> nth=1'); pg.wait_for_selector('table.list tr.click'); shot('records', 420)
-    signout(); login('admin@demo.my'); pg.click('.nav a >> nth=3'); pg.wait_for_selector('.u-f'); shot('users', 560)
+    signout(); login('admin@demo.my'); pg.click('.mcard >> nth=1'); pg.click('[data-act=start]'); pg.wait_for_selector('.item'); pg.click('.item [data-v=ok] >> nth=0'); pg.wait_for_timeout(1800)
+    pg.click('.nav a >> nth=1'); pg.wait_for_selector('tr.click [data-act=delrec]'); pg.click('tr.click [data-act=delrec]'); pg.wait_for_selector('.modal'); pg.fill('#askv', TXT[lang]['dl']); shot('delete', 600); pg.click('.modal [data-x="0"]')
+    pg.click('.nav a >> nth=3'); pg.wait_for_selector('.u-f'); shot('users', 560)
     pg.click('[data-act=uadd]'); pg.fill('#uaddf [name=nm]', TXT[lang]['nm']); pg.fill('#uaddf [name=uid]', 'fadzil'); pg.fill('#uaddf [name=pw]', 'Abc12345'); shot('add-user', 700); pg.click('#uaddf [data-x="0"]')
     pg.click('.nav a >> nth=2'); pg.wait_for_selector('.grid'); pg.click('.mcard >> nth=0'); pg.wait_for_selector('[data-tf=rev]'); shot('setup', 640)
     ctx.close()
