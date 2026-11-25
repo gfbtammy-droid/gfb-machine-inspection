@@ -284,7 +284,9 @@ create or replace function public.mic_round_json(r public.mic_rounds, p_full boo
 language sql stable set search_path = public as $$
   select jsonb_build_object('id', r.id, 'seq', r.seq, 'time', r.time_text, 'batch', r.batch, 'status', r.status, 'ng', r.ng,
     'done_by', r.done_by, 'done_name', r.done_name, 'submitted_at', r.submitted_at,
-    'check_by', r.check_by, 'check_name', r.check_name, 'check_at', r.check_at, 'note', r.note, 'updated_at', r.updated_at)
+    'check_by', r.check_by, 'check_name', r.check_name, 'check_at', r.check_at, 'note', r.note, 'updated_at', r.updated_at,
+    'rv_pending', (select count(*) from jsonb_each(r.items) e where (e.value->>'c' = 'ng' or e.value->>'p' = 'n') and e.value->'rv' is null),
+    'rv_hold', (select count(*) from jsonb_each(r.items) e where e.value->'rv'->>'d' = 'hold'))
     || case when p_full then jsonb_build_object('items', r.items, 'refs', r.refs) else '{}'::jsonb end
 $$;
 
@@ -445,6 +447,9 @@ begin
     if r.done_by = uid then
       raise exception 'Anda tidak boleh menyemak pemeriksaan anda sendiri / You cannot check your own inspection';
     end if;
+    if exists (select 1 from jsonb_each(r.items) e where (e.value->>'c' = 'ng' or e.value->>'p' = 'n') and e.value->'rv' is null) then
+      raise exception 'Buat keputusan (Boleh teruskan / Tahan) untuk setiap bahagian Tidak OK dahulu / Decide Can proceed or Hold for every Not OK part first';
+    end if;
     update public.mic_rounds set status = 'checked', check_by = uid, check_name = public.mic_name(), check_at = now(),
            note = nullif(left(btrim(coalesce(p_note, '')), 300), ''), updated_at = now() where id = p_id;
     perform public.mic_addlog('round_check', i.id, p_id, jsonb_build_object('round', r.seq, 'note', p_note));
@@ -459,6 +464,42 @@ begin
     perform public.mic_addlog('round_return', i.id, p_id, jsonb_build_object('round', r.seq, 'reason', p_note));
   end if;
   update public.mic_inspections set updated_at = now() where id = i.id;
+end $$;
+
+-- ---------- decision on a Not OK / missing part ----------
+-- A person with Check by or Verify by classifies the issue (minor / major) and decides whether the
+-- machine can proceed or must be held. A major issue is always Hold. Nobody decides on their own inspection.
+create or replace function public.mic_review_item(p_round uuid, p_item text, p_sev text, p_dec text, p_note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.mic_rounds; i public.mic_inspections; a jsonb; v_dec text;
+        v_note text := left(btrim(coalesce(p_note, '')), 300);
+begin
+  perform public.mic_must('any');
+  if not (public.mic_can('check') or public.mic_can('verify')) then
+    raise exception 'Akaun anda tidak dibenarkan untuk tindakan ini / Your account is not allowed to do this';
+  end if;
+  select * into r from public.mic_rounds where id = p_round for update;
+  if not found then raise exception 'Pemeriksaan tidak dijumpai / Inspection not found'; end if;
+  select * into i from public.mic_inspections where id = r.inspection_id;
+  if i.status = 'verified' then raise exception 'Senarai semak ini telah disahkan / This checklist has already been verified'; end if;
+  if r.status = 'draft' then raise exception 'Pemeriksaan ini belum dihantar / This inspection has not been submitted yet'; end if;
+  if r.done_by = uid then
+    raise exception 'Anda tidak boleh membuat keputusan untuk pemeriksaan anda sendiri / You cannot decide on your own inspection';
+  end if;
+  a := r.items->p_item;
+  if a is null or not (a->>'c' = 'ng' or a->>'p' = 'n') then
+    raise exception 'Bahagian ini tidak ditanda Tidak OK / This part is not marked Not OK';
+  end if;
+  if p_sev not in ('minor','major') or p_dec not in ('go','hold') then raise exception 'Invalid decision'; end if;
+  v_dec := case when p_sev = 'major' then 'hold' else p_dec end;
+  if v_dec = 'go' and v_note = '' then
+    raise exception 'Sila tulis sebab mesin boleh diteruskan / Please write why the machine can proceed';
+  end if;
+  update public.mic_rounds set items = jsonb_set(items, array[p_item, 'rv'],
+           jsonb_build_object('s', p_sev, 'd', v_dec, 'r', v_note, 'by', uid, 'name', public.mic_name(), 'at', now())), updated_at = now()
+   where id = p_round;
+  update public.mic_inspections set updated_at = now() where id = i.id;
+  perform public.mic_addlog('item_review', i.id, p_round, jsonb_build_object('round', r.seq, 'part', p_item, 'class', p_sev, 'decision', v_dec, 'note', v_note));
 end $$;
 
 -- ---------- Verify by ----------

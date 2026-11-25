@@ -101,6 +101,12 @@ table.list tr.click{cursor:pointer} table.list tr.click:hover td{background:var(
 .item .nm{font-weight:700}
 .item .cr{color:var(--crit);font-size:13.5px;margin:2px 0 8px}
 .item .full{grid-column:1/-1}
+.auto{min-height:42px;padding:9px 10px;border:1px dashed var(--line);border-radius:9px;background:var(--surface-2);font-size:14px;font-weight:400;color:var(--ink)}
+.rv{margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}
+.rv .rvb{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.rv .rvb button{min-height:44px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface);font-weight:700;font-size:13.5px;cursor:pointer;padding:4px}
+.rv .rvb button.go{border-color:var(--ok);color:var(--ok)}.rv .rvb button.hold{border-color:var(--bad);color:var(--bad)}
+@media (max-width:420px){.rv .rvb{grid-template-columns:1fr}}
 .ans{display:grid;grid-template-columns:1fr 1.25fr 1.25fr .8fr;gap:6px}
 .ans button{min-height:44px;font-size:14px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface);font-weight:700;cursor:pointer;padding:4px 6px}
 .ans button.on.ok{background:var(--ok);border-color:var(--ok);color:#fff}
@@ -336,14 +342,18 @@ async function route() {
 window.addEventListener('hashchange', () => { if (S.dirty) saveDraft(true); route(); });
 
 /* ---------- Today ---------- */
+function rvChips(rs) {
+  const p = rs.reduce((a, r) => a + (r.status === 'draft' ? 0 : r.rv_pending || 0), 0), hd = rs.reduce((a, r) => a + (r.status === 'draft' ? 0 : r.rv_hold || 0), 0);
+  return (p ? '<span class="chip warn">' + p + ' ' + T('to decide', 'perlu keputusan') + '</span> ' : '') + (hd ? '<span class="chip bad">&#9940; ' + hd + ' ' + T('on HOLD', 'DITAHAN') + '</span>' : '');
+}
 function roundChips(rs) {
   const c = k => rs.filter(r => r.status === k).length, ng = rs.reduce((a, r) => a + (r.ng || 0), 0);
   let h = '';
   if (c('draft')) h += '<span class="chip warn">' + c('draft') + ' ' + T('in progress', 'sedang diisi') + '</span> ';
   if (c('submitted')) h += '<span class="chip info">' + c('submitted') + ' ' + T('to check', 'untuk disemak') + '</span> ';
   if (c('checked')) h += '<span class="chip ok">' + c('checked') + ' ' + T('checked', 'disemak') + '</span> ';
-  if (ng) h += '<span class="chip bad">' + ng + ' ' + T('Not OK', 'Tidak OK') + '</span>';
-  return h;
+  if (ng) h += '<span class="chip bad">' + ng + ' ' + T('Not OK', 'Tidak OK') + '</span> ';
+  return h + rvChips(rs);
 }
 async function vToday() {
   S.day = await rpc('mic_range', {p_from: S.date, p_to: S.date});
@@ -356,13 +366,15 @@ async function vToday() {
     else st = roundChips(rs);
     return '<a class="card mcard' + (t.status === 'not_in_use' ? ' off' : '') + '" href="#/sheet/' + t.key + '/' + S.date + '"><div><h3>' + esc(t.name) + '</h3><div class="fn">' + esc(t.formNo) + ' &middot; Rev ' + esc(t.rev) + ' &middot; ' + allItems(t).length + ' ' + T('parts', 'bahagian') + '</div></div>' +
       '<div>' + st + (t.status === 'pending' ? ' <span class="chip warn">' + MSTAT().pending + '</span>' : '') + '</div>' +
-      (rs.length ? '<div class="small muted">' + rs.length + ' ' + T('round(s)', 'pusingan') + ': ' + rs.map(r => esc(r.time || '--:--')).join(', ') + '</div>' : '') + '</a>';
+      (rs.length ? '<div class="small muted">' + rs.length + ' ' + T('inspection(s)', 'pemeriksaan') + ': ' + rs.map(r => esc(r.time || '--:--')).join(', ') + '</div>' : '') + '</a>';
   }).join('');
   const toCheck = S.day.reduce((a, d) => a + d.rounds.filter(r => r.status === 'submitted').length, 0);
+  const toDecide = S.day.reduce((a, d) => a + d.rounds.reduce((x, r) => x + (r.status === 'draft' ? 0 : r.rv_pending || 0), 0), 0);
   const toVerify = S.day.filter(d => d.status === 'open' && d.rounds.length && d.rounds.every(r => r.status === 'checked')).length;
   shell('today', '<div class="datebar"><button class="btn sm" data-act="day" data-n="-1" aria-label="Previous day">&#9664;</button><input type="date" id="daypick" value="' + S.date + '" max="' + S.today + '"><button class="btn sm" data-act="day" data-n="1" aria-label="Next day"' + (S.date >= S.today ? ' disabled' : '') + '>&#9654;</button>' +
     (S.date !== S.today ? '<button class="btn sm" data-act="day" data-n="0">' + T('Today', 'Hari ini') + '</button>' : '') + '<span class="muted">' + fmtD(S.date) + '</span><span class="sp"></span><button class="btn sm" data-act="refresh">&#8635; ' + T('Refresh', 'Muat semula') + '</button></div>' +
-    (can('check') && toCheck ? '<div class="banner info">' + toCheck + ' ' + T('round(s) waiting for Check by', 'pusingan menunggu Check by') + '</div>' : '') +
+    ((can('check') || can('verify')) && toDecide ? '<div class="banner">' + toDecide + ' ' + T('Not OK part(s) waiting for a decision (Can proceed / Hold)', 'bahagian Tidak OK menunggu keputusan (Boleh teruskan / Tahan)') + '</div>' : '') +
+    (can('check') && toCheck ? '<div class="banner info">' + toCheck + ' ' + T('inspection(s) waiting for Check by', 'pemeriksaan menunggu Check by') + '</div>' : '') +
     (can('verify') && toVerify ? '<div class="banner info">' + toVerify + ' ' + T('checklist(s) ready for Verify by', 'senarai semak sedia untuk Verify by') + '</div>' : '') +
     '<div class="grid">' + cards + '</div>');
   S.poll = setInterval(() => { if (!document.hidden && !$('.modal-bg')) vToday().catch(() => {}); }, 30000);
@@ -377,7 +389,7 @@ async function vSheet(key, date) {
   const ver = sh && sh.status === 'verified';
   const allChecked = rs.length && rs.every(r => r.status === 'checked');
   const mine = sh && rs.some(r => r.done_by === S.me.id || r.check_by === S.me.id);
-  let h = '<div class="row" style="margin-bottom:10px"><a class="btn sm" href="#/today">&#9664; ' + T('Back', 'Kembali') + '</a><span class="sp"></span><button class="btn sm pri" data-act="pdf"' + (sh && rs.some(r => r.status !== 'draft') ? '' : ' disabled title="' + T('Available after an inspection round is submitted', 'Tersedia selepas pusingan pemeriksaan dihantar') + '"') + '>&#11015; ' + T('Download PDF', 'Muat turun PDF') + '</button><button class="btn sm" data-act="print" data-ph="1">&#128424; ' + T('Print F52', 'Cetak F52') + '</button><button class="btn sm" data-act="print" data-ph="0">' + T('Print without photos', 'Cetak tanpa gambar') + '</button></div>' +
+  let h = '<div class="row" style="margin-bottom:10px"><a class="btn sm" href="#/today">&#9664; ' + T('Back', 'Kembali') + '</a><span class="sp"></span><button class="btn sm pri" data-act="pdf"' + (sh && rs.some(r => r.status !== 'draft') ? '' : ' disabled title="' + T('Available after an inspection is submitted', 'Tersedia selepas pemeriksaan dihantar') + '"') + '>&#11015; ' + T('Download PDF', 'Muat turun PDF') + '</button><button class="btn sm" data-act="print" data-ph="1">&#128424; ' + T('Print F52', 'Cetak F52') + '</button><button class="btn sm" data-act="print" data-ph="0">' + T('Print without photos', 'Cetak tanpa gambar') + '</button></div>' +
     '<div class="card"><div class="row"><div><h2>' + esc(t.title) + (t.key.startsWith('drum') ? ' &ndash; ' + esc(t.name.replace('Drum Mixer ', '')) : '') + '</h2><div class="small muted">Form No.: ' + esc(t.formNo) + ' &middot; Revision: ' + esc(t.rev) + ' &middot; Effective Date: ' + esc(t.eff) + '</div></div><span class="sp"></span>' +
     (ver ? '<span class="chip ok">&#10003; ' + T('Verified', 'Disahkan') + '</span>' : '<span class="chip">' + T('Open', 'Terbuka') + '</span>') + '</div>' +
     '<div style="margin-top:6px"><b>DATE: ' + fmtD(date) + '</b></div>' +
@@ -385,14 +397,15 @@ async function vSheet(key, date) {
     (t.status === 'not_in_use' ? '<div class="banner">' + T('This machine is marked Not in use. Admin can change this under Checklists.', 'Mesin ini ditanda Tidak Digunakan. Admin boleh menukarnya di bawah Senarai semak.') + '</div>' : '') +
     (ver ? '<div class="banner info" style="margin-bottom:0">Verify by: ' + esc(sh.verify_name) + ' &middot; ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' &middot; ' + esc(sh.verify_note) : '') + '</div>' : '') +
     '<div class="row" style="margin-top:12px">' +
-    (canStart(t, sh, date) ? '<button class="btn pri" data-act="start" data-k="' + key + '" data-d="' + date + '">+ ' + (rs.some(r => r.status === 'draft' && r.done_by === S.me.id) ? T('Continue my inspection', 'Sambung pemeriksaan saya') : T('Start inspection round', 'Mula pusingan pemeriksaan')) + '</button>' : '') +
+    (canStart(t, sh, date) ? '<button class="btn pri" data-act="start" data-k="' + key + '" data-d="' + date + '">+ ' + (rs.some(r => r.status === 'draft' && r.done_by === S.me.id) ? T('Continue my inspection', 'Sambung pemeriksaan saya') : T('Start new inspection', 'Mula pemeriksaan baharu')) + '</button>' : '') +
     (can('verify') && sh && !ver ? '<button class="btn pri" data-act="verify" ' + (allChecked && !mine ? '' : 'disabled') + ' title="' + (mine ? T('You filled in or checked this checklist, so another person must verify it', 'Anda mengisi atau menyemak senarai ini, jadi orang lain perlu mengesahkannya') : '') + '">&#10003; ' + T('Verify checklist (Verify by)', 'Sahkan senarai semak (Verify by)') + '</button>' : '') +
     (can('admin') && ver ? '<button class="btn bad" data-act="reopen">' + T('Reopen', 'Buka semula') + '</button>' : '') + '</div></div>';
-  h += '<h3 style="margin:16px 0 8px">' + T('Inspection rounds', 'Pusingan pemeriksaan') + ' (' + rs.length + ')</h3>';
+  h += '<h3 style="margin:16px 0 8px">' + T('Inspections for this date', 'Pemeriksaan untuk tarikh ini') + ' (' + rs.length + ')</h3>';
+  h += '<p class="small muted" style="margin:-4px 0 8px">' + T('Each time this machine is inspected (before production starts, and at every product change-over) it is saved here as Inspection 1, 2, 3...', 'Setiap kali mesin ini diperiksa (sebelum pengeluaran bermula, dan pada setiap pertukaran produk) ia disimpan di sini sebagai Pemeriksaan 1, 2, 3...') + '</p>';
   if (!rs.length) h += '<div class="card muted">' + T('No inspection recorded for this date yet. Inspect before production starts and at every product change-over.', 'Belum ada pemeriksaan direkod untuk tarikh ini. Periksa sebelum pengeluaran bermula dan pada setiap pertukaran produk.') + '</div>';
-  h += rs.map(r => '<div class="rcard"><div><b>' + T('Round', 'Pusingan') + ' ' + r.seq + '</b> &middot; <span class="num">' + esc(r.time || '--:--') + '</span> &middot; Batch ' + esc(r.batch || '-') + '<div class="small muted">Done by: ' + esc(r.done_name) + (r.check_name ? ' &middot; Check by: ' + esc(r.check_name) + ' ' + fmtDT(r.check_at) : '') + '</div>' +
+  h += rs.map(r => '<div class="rcard"><div><b>' + T('Inspection', 'Pemeriksaan') + ' ' + r.seq + '</b> &middot; <span class="num">' + esc(r.time || '--:--') + '</span> &middot; Batch ' + esc(r.batch || '-') + '<div class="small muted">Done by: ' + esc(r.done_name) + (r.check_name ? ' &middot; Check by: ' + esc(r.check_name) + ' ' + fmtDT(r.check_at) : '') + '</div>' +
     (r.note ? '<div class="small" style="color:var(--warn)">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') + ': ' : T('Note', 'Catatan') + ': ') + esc(r.note) + '</div>' : '') + '</div><span class="sp"></span>' +
-    stChip(r) + (r.ng ? '<span class="chip bad">' + r.ng + ' ' + T('Not OK', 'Tidak OK') + '</span>' : '') +
+    stChip(r) + (r.ng ? '<span class="chip bad">' + r.ng + ' ' + T('Not OK', 'Tidak OK') + '</span>' : '') + rvChips([r]) +
     '<a class="btn sm' + (r.status === 'draft' && r.done_by === S.me.id || r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? ' pri' : '') + '" href="#/round/' + key + '/' + date + '/' + r.id + '">' + (r.status === 'draft' && r.done_by === S.me.id ? T('Continue', 'Sambung') : r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? T('Check', 'Semak') : T('View', 'Lihat')) + '</a></div>').join('');
   h += '<h3 style="margin:18px 0 8px">' + T('Form view', 'Paparan borang') + ' (' + esc(t.formNo) + ')</h3><div class="f52-wrap">' + f52Table(t, rs, sh, date, {screen: true, photos: true}) + '</div>';
   if (sh && sh.log && sh.log.length) h += '<details style="margin-top:14px"><summary class="muted">' + T('Change history', 'Sejarah perubahan') + ' (' + sh.log.length + ')</summary><div class="tbl-wrap" style="margin-top:8px"><table class="list"><tr><th>' + T('When', 'Bila') + '</th><th>' + T('Who', 'Siapa') + '</th><th>' + T('What', 'Apa') + '</th></tr>' +
@@ -445,14 +458,20 @@ function f52Table(t, rounds, sh, date, o) {
     return h + '</table>';
   }).map(x => o.screen ? x : '<div class="pg">' + x + '</div>').join('');
 }
+function notOkRows(rounds, t) {
+  const out = [];
+  rounds.forEach(r => allItems(t).forEach(it => { const a = (r.items || {})[it.id]; if (a && (a.c === 'ng' || a.p === 'n')) { const v = a.rv || {}; out.push([r.seq, it.name, (a.p === 'n' ? 'MISSING. ' : '') + (a.r || ''), v.s ? (v.s === 'major' ? 'Major' : 'Minor') : '', v.d ? (v.d === 'go' ? 'CAN PROCEED' : 'HOLD') : 'waiting for decision', v.r || '', v.name || '', fmtDT(v.at)]); } }));
+  return out;
+}
+const NOK_HEAD = ['Inspection', 'Part', 'Operator remark', 'Class', 'Decision', 'Decision note', 'Decided by', 'Decided'];
 function printSheet(photos) {
   const p = location.hash.replace(/^#\/?/, '').split('/'), key = p[1], date = p[2] || S.today, sh = S.sheet;
   const t = sh ? sh.template : tpl(key), rs = sh ? sh.rounds.filter(r => r.status !== 'draft') : [];
-  let h = f52Table(t, rs, sh, date, {screen: false, photos});
+  let h = f52Table(t, rs, sh, date, {screen: false, photos}); const nok = notOkRows(rs, t);
   if (rs.length) {
-    h = h.replace(/<\/div>$/, '') + '<div class="e-rec"><b>Electronic sign-off record</b> (GFB Machine Inspection app; names are stamped from each person\'s own sign-in)<table><tr><th>Round</th><th>Time</th><th>Batch</th><th>Done by</th><th>Submitted</th><th>Check by</th><th>Checked</th><th>Not OK / missing</th></tr>' +
+    h = h.replace(/<\/div>$/, '') + '<div class="e-rec"><b>Electronic sign-off record</b> (GFB Machine Inspection app; names are stamped from each person\'s own sign-in)<table><tr><th>Inspection</th><th>Time</th><th>Batch</th><th>Done by</th><th>Submitted</th><th>Check by</th><th>Checked</th><th>Not OK / missing</th></tr>' +
       rs.map(r => '<tr><td>' + r.seq + '</td><td>' + esc(r.time) + '</td><td>' + esc(r.batch) + '</td><td>' + esc(r.done_name) + ' (' + esc(initials(r.done_name)) + ')</td><td>' + fmtDT(r.submitted_at) + '</td><td>' + esc(r.check_name || '') + '</td><td>' + fmtDT(r.check_at) + '</td><td>' + (r.ng || 0) + '</td></tr>').join('') +
-      '</table><div style="margin-top:1.5mm">Verify by: ' + (sh.status === 'verified' ? esc(sh.verify_name) + ', ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' &ndash; ' + esc(sh.verify_note) : '') : '<i>not yet verified</i>') + '</div></div></div>';
+      '</table>' + (nok.length ? '<div style="margin-top:2mm"><b>Not OK / missing parts: review and decision</b></div><table><tr>' + NOK_HEAD.map(x => '<th>' + x + '</th>').join('') + '</tr>' + nok.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' : '') + '<div style="margin-top:1.5mm">Verify by: ' + (sh.status === 'verified' ? esc(sh.verify_name) + ', ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' &ndash; ' + esc(sh.verify_note) : '') : '<i>not yet verified</i>') + '</div></div></div>';
   }
   $('#print').innerHTML = h;
   $('#pagecss').textContent = '@page{size:A4 ' + (t.key.startsWith('drum') ? 'landscape' : 'portrait') + ';margin:9mm 8mm}';
@@ -569,9 +588,20 @@ async function pdfSheet() {
   doc.setFont('helvetica', 'normal'); doc.text("(GFB Machine Inspection app; names are stamped from each person's own sign-in)", M + 34, y);
   doc.autoTable({startY: y + 1.5, margin: {top: 28, left: M, right: M, bottom: 11}, theme: 'grid', tableWidth: W,
     styles: {font: 'helvetica', fontSize: 6.8, cellPadding: 0.9, lineColor: [90, 90, 90], lineWidth: 0.12, textColor: 0}, headStyles: {fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold'},
-    head: [['Round', 'Time', 'Batch', 'Done by', 'Submitted', 'Check by', 'Checked', 'Not OK / missing']],
+    head: [['Inspection', 'Time', 'Batch', 'Done by', 'Submitted', 'Check by', 'Checked', 'Not OK / missing']],
     body: rounds.map(r => [r.seq, pdfSafe(r.time), pdfSafe(r.batch), pdfSafe(r.done_name) + ' (' + initials(r.done_name) + ')', fmtDT(r.submitted_at), pdfSafe(r.check_name || (r.status === 'submitted' ? 'waiting for check' : '')), fmtDT(r.check_at), r.ng || 0]),
     didDrawPage: d => { if (d.pageNumber > 1) pageHead(); }});
+  const nok = notOkRows(rounds, t);
+  if (nok.length) {
+    y = doc.lastAutoTable.finalY + 4.5; if (y > PH - 30) { doc.addPage(); pageHead(); y = 30; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(0); doc.text('Not OK / missing parts: review and decision', M, y);
+    doc.autoTable({startY: y + 1.5, margin: {top: 28, left: M, right: M, bottom: 11}, theme: 'grid', tableWidth: W,
+      styles: {font: 'helvetica', fontSize: 6.8, cellPadding: 0.9, lineColor: [90, 90, 90], lineWidth: 0.12, textColor: 0}, headStyles: {fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold'},
+      head: [NOK_HEAD], body: nok.map(r => r.map(pdfSafe)),
+      didParseCell: d => { if (d.section === 'body' && d.column.index === 4) { d.cell.styles.fontStyle = 'bold'; if (d.cell.raw !== 'CAN PROCEED') d.cell.styles.textColor = RED; } },
+      didDrawPage: d => { if (d.pageNumber > 1) pageHead(); }});
+  }
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(0);
   y = doc.lastAutoTable.finalY + 4; doc.setFontSize(7.5);
   doc.text('Verify by: ' + (sh.status === 'verified' ? pdfSafe(sh.verify_name) + ', ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' - ' + pdfSafe(sh.verify_note) : '') : 'NOT YET VERIFIED'), M, y);
   doc.setFontSize(6.5); doc.setTextColor(110); doc.text('PDF generated ' + fmtDT(new Date()) + ' by ' + pdfSafe(S.me.name), PW - M, y, {align: 'right'});
@@ -590,20 +620,22 @@ async function vRound(key, date, rid) {
   let time = r.time || '', batch = r.batch || '';
   if (edit) { try { const l = JSON.parse(localStorage.getItem(draftKey(rid)) || 'null'); if (l && l.ts > new Date(r.updated_at).getTime()) { S.ans = l.ans; S.refs = l.refs || {}; time = l.time || time; S.dirty = true; } } catch (e) {} }
   if (edit && !time) { time = nowHM(); S.dirty = true; }
+  S.canReview = (can('check') || can('verify')) && r.status !== 'draft' && r.done_by !== S.me.id && sh.status !== 'verified';
+  const pend = Object.values(r.items || {}).filter(a => (a.c === 'ng' || a.p === 'n') && !a.rv).length;
   const canCheck = can('check') && r.status === 'submitted' && r.done_by !== S.me.id && sh.status !== 'verified';
   const canReturn = can('check') && sh.status !== 'verified' && (r.status === 'submitted' || r.status === 'checked' && (r.check_by === S.me.id || can('admin')));
   let h = '<div class="row" style="margin-bottom:10px"><a class="btn sm" href="#/sheet/' + key + '/' + date + '">&#9664; ' + T('Back', 'Kembali') + '</a><span class="sp"></span>' + stChip(r) + '</div>' +
-    '<div class="card"><h2>' + esc(t.name) + ' &ndash; ' + T('Round', 'Pusingan') + ' ' + r.seq + '</h2><div class="small muted">' + esc(t.formNo) + ' Rev ' + esc(t.rev) + ' &middot; ' + fmtD(date) + ' &middot; Done by: ' + esc(r.done_name) + '</div>' +
+    '<div class="card"><h2>' + esc(t.name) + ' &ndash; ' + T('Inspection', 'Pemeriksaan') + ' ' + r.seq + '</h2><div class="small muted">' + esc(t.formNo) + ' Rev ' + esc(t.rev) + ' &middot; ' + fmtD(date) + ' &middot; Done by: ' + esc(r.done_name) + '</div>' +
     (r.note ? '<div class="banner' + (r.status === 'draft' ? ' bad' : ' info') + '">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') : T('Checker note', 'Catatan penyemak')) + ': ' + esc(r.note) + '</div>' : '') +
     '<div class="row" style="margin-top:10px;align-items:flex-start"><label class="f" style="flex:1;min-width:120px"><span>TIME</span><input type="time" id="r-time" value="' + esc(time) + '"' + (edit ? '' : ' disabled') + '></label>' +
-    '<label class="f" style="flex:2;min-width:160px"><span>BATCH NO. ' + T('(automatic)', '(automatik)') + '</span><input type="text" id="r-batch" value="' + esc(batch) + '" placeholder="' + T('Given automatically when you submit', 'Diberi secara automatik apabila dihantar') + '" readonly disabled></label></div></div>';
+    '<div class="f" style="flex:2;min-width:160px"><span>BATCH NO.</span><div class="auto">' + (batch ? '<b class="num">' + esc(batch) + '</b>' : T('Automatic. Nothing to type. The number appears after you submit.', 'Automatik. Tidak perlu taip. Nombor keluar selepas anda hantar.')) + '</div></div></div></div>';
   t.sections.forEach(s => {
     h += '<div class="sec-h"><span>' + esc(s.title || t.partHdr) + '</span>' + (s.ref ? (edit ? '<input type="text" data-ref="' + s.id + '" maxlength="30" placeholder="' + T('Unit no.', 'No. unit') + '" value="' + esc(S.refs[s.id] || '') + '" aria-label="Unit number">' : (S.refs[s.id] ? '<span class="chip">' + esc(S.refs[s.id]) + '</span>' : '')) : '') + '</div>';
     s.items.forEach(it => { h += itemHtml(it, edit); });
   });
   if (edit) h += '<div class="foot"><div class="in"><div class="prog" aria-hidden="true"><i id="pbar"></i></div><span class="small num" id="pcount"></span><span class="small muted" id="savest"></span><span class="sp"></span><button class="btn bad sm" data-act="delround">' + T('Delete draft', 'Padam draf') + '</button><button class="btn pri" data-act="submit">' + T('Submit for check', 'Hantar untuk semakan') + '</button></div></div>';
-  else if (canCheck || canReturn) h += '<div class="foot"><div class="in"><span class="small">' + (r.ng ? '<span class="chip bad">' + r.ng + ' ' + T('Not OK / missing', 'Tidak OK / tiada') + '</span>' : '<span class="chip ok">' + T('All OK', 'Semua OK') + '</span>') + '</span><span class="sp"></span>' +
-    (canReturn ? '<button class="btn bad" data-act="return">' + T('Return for correction', 'Pulangkan untuk pembetulan') + '</button>' : '') + (canCheck ? '<button class="btn pri" data-act="check">&#10003; ' + T('Sign as Check by', 'Tandatangan Check by') + '</button>' : '') + '</div></div>';
+  else if (canCheck || canReturn || (S.canReview && pend)) h += '<div class="foot"><div class="in"><span class="small">' + (r.ng ? '<span class="chip bad">' + r.ng + ' ' + T('Not OK / missing', 'Tidak OK / tiada') + '</span>' : '<span class="chip ok">' + T('All OK', 'Semua OK') + '</span>') + (pend ? ' <span class="chip warn">' + pend + ' ' + T('to decide', 'perlu keputusan') + '</span>' : '') + '</span><span class="sp"></span>' +
+    (canReturn ? '<button class="btn bad" data-act="return">' + T('Return for correction', 'Pulangkan untuk pembetulan') + '</button>' : '') + (canCheck ? '<button class="btn pri" data-act="check"' + (pend ? ' disabled title="' + T('Decide Can proceed or Hold for every Not OK part first', 'Buat keputusan Boleh teruskan atau Tahan untuk setiap bahagian Tidak OK dahulu') + '"' : '') + '>&#10003; ' + T('Sign as Check by', 'Tandatangan Check by') + '</button>' : '') + '</div></div>';
   shell('today', h); if (edit) updProg();
 }
 function itemHtml(it, edit) {
@@ -616,8 +648,17 @@ function itemHtml(it, edit) {
       (st === 'ng' || st === 'miss' || st === 'na' ? '<textarea data-rm="' + it.id + '" maxlength="300" placeholder="' + (st === 'na' ? T('Remark (optional)', 'Catatan (pilihan)') : T('What is wrong? (required)', 'Apa masalahnya? (wajib)')) + '">' + esc(a.r || '') + '</textarea>' : '');
   } else {
     body = '<div class="rd">' + (st === 'ok' ? '<span class="chip ok">Condition: OK</span><span class="chip ok">Presence: /</span>' : st === 'ng' ? '<span class="chip bad">Condition: NOT OK</span><span class="chip ok">Presence: /</span>' : st === 'miss' ? '<span class="chip bad">Presence: X (' + T('missing', 'tiada') + ')</span>' : st === 'na' ? '<span class="chip">N/A</span>' : '<span class="chip warn">' + T('Not inspected', 'Belum diperiksa') + '</span>') + (a.r ? '<span class="small">' + esc(a.r) + '</span>' : '') + '</div>';
+    if (st === 'ng' || st === 'miss') body += rvHtml(it, a);
   }
   return '<div class="item a-' + (st === 'miss' ? 'ng' : st) + '" id="it-' + it.id + '"><div>' + ph + '</div><div><div class="nm">' + esc(it.name) + (it.flag ? ' <span class="chip warn">' + T('To review', 'Perlu semakan') + '</span>' : '') + '</div><div class="cr">' + (esc(it.crit) || '<span class="muted">' + T('(criteria not defined yet)', '(kriteria belum ditetapkan)') + '</span>') + '</div></div><div class="full">' + body + '</div></div>';
+}
+function rvHtml(it, a) {
+  const v = a.rv, CL = {minor: T('Minor issue', 'Isu kecil'), major: T('Major issue', 'Isu besar')};
+  let h = '<div class="rv"><b class="small">' + T('Decision', 'Keputusan') + '</b> ';
+  if (v) h += '<span class="chip ' + (v.s === 'major' ? 'bad' : 'warn') + '">' + CL[v.s] + '</span> ' + (v.d === 'go' ? '<span class="chip ok">&#10003; ' + T('Can proceed', 'Boleh teruskan') + '</span>' : '<span class="chip bad">&#9940; ' + T('HOLD, do not use', 'TAHAN, jangan guna') + '</span>') + '<div class="small" style="margin-top:4px">' + (v.r ? esc(v.r) + ' &middot; ' : '') + '<span class="muted">' + esc(v.name) + ', ' + fmtDT(v.at) + '</span></div>';
+  else h += '<span class="chip warn">' + T('Waiting for QC / Production Executive', 'Menunggu QC / Production Executive') + '</span>';
+  if (S.canReview) h += '<textarea data-rvn="' + it.id + '" maxlength="300" placeholder="' + T('Decision note (required for Can proceed), e.g. why it is safe, F45 no.', 'Catatan keputusan (wajib untuk Boleh teruskan), cth. sebab selamat, no. F45') + '">' + esc(v ? v.r : '') + '</textarea><div class="rvb"><button type="button" class="go" data-act="rv" data-id="' + it.id + '" data-s="minor" data-d="go">' + T('Minor: can proceed', 'Kecil: boleh teruskan') + '</button><button type="button" class="hold" data-act="rv" data-id="' + it.id + '" data-s="minor" data-d="hold">' + T('Minor: hold', 'Kecil: tahan') + '</button><button type="button" class="hold" data-act="rv" data-id="' + it.id + '" data-s="major" data-d="hold">' + T('Major: hold + F45', 'Besar: tahan + F45') + '</button></div>';
+  return h + '</div>';
 }
 function findItem(id) { return allItems(S.sheet.template).find(i => i.id === id); }
 function setAns(id, v) {
@@ -634,14 +675,14 @@ function updProg() {
 }
 function touch() {
   S.dirty = true;
-  try { localStorage.setItem(draftKey(S.round.id), JSON.stringify({ts: Date.now(), ans: S.ans, refs: S.refs, time: $('#r-time').value, batch: $('#r-batch').value})); } catch (e) {}
+  try { localStorage.setItem(draftKey(S.round.id), JSON.stringify({ts: Date.now(), ans: S.ans, refs: S.refs, time: $('#r-time').value})); } catch (e) {}
   updProg(); clearTimeout(S.timer); S.timer = setTimeout(() => saveDraft(), 1500);
 }
 async function saveDraft(quiet, submit) {
   if (!S.round || !S.editing) return;
   clearTimeout(S.timer);
-  const t = $('#r-time'), b = $('#r-batch');
-  const args = {p_id: S.round.id, p_time: t ? t.value : S.round.time, p_batch: b ? b.value : S.round.batch, p_refs: S.refs, p_items: S.ans, p_submit: !!submit};
+  const t = $('#r-time');
+  const args = {p_id: S.round.id, p_time: t ? t.value : S.round.time, p_batch: '', p_refs: S.refs, p_items: S.ans, p_submit: !!submit};
   S.saving = true; S.dirty = false; if (!quiet) updProg();
   try { const res = await rpc('mic_save_round', args); S.savedAt = nowHM(); S.saving = false; if (!quiet) updProg(); return res; }
   catch (e) { S.saving = false; S.dirty = true; if (!quiet) updProg(); if (submit) throw e; if (!quiet && !/fetch|network/i.test(String(e.message))) fail(e); }
@@ -659,7 +700,7 @@ async function submitRound() {
     const res = await saveDraft(false, true);
     try { localStorage.removeItem(draftKey(S.round.id)); } catch (e) {}
     S.editing = false; S.dirty = false;
-    if (res && res.ng) await ask({title: T('Not OK parts found', 'Bahagian Tidak OK ditemui'), body: '<p><b>Batch no. ' + esc(res.batch || '') + '</b></p>' + T('Do not use the machine until it is cleared. Inform the Production Leader and QC now, and record the breakdown, root cause and corrective action in the <b>Machine Maintenance Upkeep Report (F45)</b> as required by P07.', 'Jangan gunakan mesin sehingga ia dibenarkan. Maklumkan Ketua Pengeluaran dan QC sekarang, dan rekodkan kerosakan, punca dan tindakan pembetulan dalam <b>Machine Maintenance Upkeep Report (F45)</b> seperti dikehendaki P07.'), noCancel: true, ok: T('Understood', 'Faham')});
+    if (res && res.ng) await ask({title: T('Not OK parts found', 'Bahagian Tidak OK ditemui'), body: '<p><b>Batch no. ' + esc(res.batch || '') + '</b></p>' + T('<b>Do not start this machine yet.</b> Tell your Production Leader and QC now. QC or the Production Executive will decide in the app if the machine <b>can proceed</b> (minor issue) or must be on <b>HOLD</b>. A major issue must be recorded in the <b>Machine Maintenance Upkeep Report (F45)</b> as required by P07.', '<b>Jangan mulakan mesin ini dahulu.</b> Beritahu Ketua Pengeluaran dan QC sekarang. QC atau Production Executive akan membuat keputusan dalam aplikasi sama ada mesin <b>boleh diteruskan</b> (isu kecil) atau mesti <b>DITAHAN</b>. Isu besar mesti direkod dalam <b>Machine Maintenance Upkeep Report (F45)</b> seperti dikehendaki P07.'), noCancel: true, ok: T('Understood', 'Faham')});
     else toast(T('Submitted. Batch no. ', 'Dihantar. No. batch ') + ((res && res.batch) || '') + T('. You can download the PDF on this page.', '. Anda boleh muat turun PDF di halaman ini.'));
     go('sheet/' + S.rkey + '/' + S.rdate);
   } catch (e) { fail(e); }
@@ -673,7 +714,7 @@ async function vRecords() {
     '<label class="f" style="margin:0"><span>' + T('Machine', 'Mesin') + '</span><select id="rm"><option value="">' + T('All', 'Semua') + '</option>' + S.tpls.map(t => '<option value="' + t.key + '"' + (f.m === t.key ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('') + '</select></label>' +
     '<label class="f" style="margin:0"><span>Status</span><select id="rs"><option value="">' + T('All', 'Semua') + '</option><option value="open"' + (f.st === 'open' ? ' selected' : '') + '>' + T('Not verified yet', 'Belum disahkan') + '</option><option value="verified"' + (f.st === 'verified' ? ' selected' : '') + '>' + T('Verified', 'Disahkan') + '</option><option value="ng"' + (f.st === 'ng' ? ' selected' : '') + '>' + T('With Not OK parts', 'Ada bahagian Tidak OK') + '</option></select></label>' +
     '<button class="btn pri" data-act="recgo">' + T('Show', 'Papar') + '</button>' + (can('review') ? '<button class="btn" data-act="csv">&#11015; ' + T('Download (Excel CSV)', 'Muat turun (Excel CSV)') + '</button>' : '') + '</div></div>' +
-    '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Date', 'Tarikh') + '</th><th>' + T('Machine', 'Mesin') + '</th><th>Form</th><th>' + T('Rounds', 'Pusingan') + '</th><th>Done by</th><th>Check by</th><th>Verify by</th><th>Status</th></tr>' +
+    '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Date', 'Tarikh') + '</th><th>' + T('Machine', 'Mesin') + '</th><th>Form</th><th>' + T('Inspections', 'Pemeriksaan') + '</th><th>Done by</th><th>Check by</th><th>Verify by</th><th>Status</th></tr>' +
     (rows.length ? rows.map(d => '<tr class="click" data-act="open" data-h="sheet/' + d.machine + '/' + d.date + '"><td class="nowrap num">' + fmtD(d.date) + '</td><td>' + esc(d.name) + '</td><td class="nowrap">' + esc(d.formNo) + ' Rev ' + esc(d.rev) + '</td><td>' + d.rounds.length + '</td><td>' + esc([...new Set(d.rounds.map(r => r.done_name))].join(', ')) + '</td><td>' + esc([...new Set(d.rounds.map(r => r.check_name).filter(Boolean))].join(', ')) + '</td><td>' + esc(d.verify_name || '') + '</td><td>' + (d.status === 'verified' ? '<span class="chip ok">&#10003; ' + T('Verified', 'Disahkan') + '</span>' : roundChips(d.rounds)) + (d.status === 'verified' && d.rounds.some(r => r.ng) ? ' <span class="chip bad">' + d.rounds.reduce((a, r) => a + r.ng, 0) + ' ' + T('Not OK', 'Tidak OK') + '</span>' : '') + '</td></tr>').join('')
       : '<tr><td colspan="8" class="muted">' + T('No checklist in this period.', 'Tiada senarai semak dalam tempoh ini.') + '</td></tr>') + '</table></div>');
 }
@@ -681,10 +722,10 @@ function csvCell(v) { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)
 async function dlCsv() {
   try {
     const f = S.rec, data = await rpc('mic_export', {p_from: f.from, p_to: f.to});
-    const out = [['Date', 'Machine', 'Form No', 'Revision', 'Round', 'Time', 'Batch', 'Section', 'Part', 'Condition criteria', 'Condition', 'Presence', 'Remark', 'Done by', 'Submitted', 'Check by', 'Checked', 'Verify by', 'Verified', 'Round status']];
+    const out = [['Date', 'Machine', 'Form No', 'Revision', 'Inspection', 'Time', 'Batch', 'Section', 'Part', 'Condition criteria', 'Condition', 'Presence', 'Remark', 'Class', 'Decision', 'Decision note', 'Decided by', 'Done by', 'Submitted', 'Check by', 'Checked', 'Verify by', 'Verified', 'Round status']];
     data.filter(d => !f.m || d.machine === f.m).forEach(d => d.rounds.forEach(r => d.template.sections.forEach(s => s.items.forEach(it => {
       const a = (r.items || {})[it.id] || {};
-      out.push([fmtD(d.date), d.template.name, d.template.formNo, d.template.rev, r.seq, r.time, r.batch, s.title, it.name, it.crit, a.c === 'na' ? 'N/A' : a.p === 'n' ? '-' : a.c === 'ng' ? 'NOT OK' : a.c === 'ok' ? 'OK' : '', a.c === 'na' ? '-' : a.p === 'n' ? 'X' : a.p === 'y' ? '/' : '', a.r || '', r.done_name, fmtDT(r.submitted_at), r.check_name || '', fmtDT(r.check_at), d.verify_name || '', fmtDT(d.verify_at), r.status]);
+      out.push([fmtD(d.date), d.template.name, d.template.formNo, d.template.rev, r.seq, r.time, r.batch, s.title, it.name, it.crit, a.c === 'na' ? 'N/A' : a.p === 'n' ? '-' : a.c === 'ng' ? 'NOT OK' : a.c === 'ok' ? 'OK' : '', a.c === 'na' ? '-' : a.p === 'n' ? 'X' : a.p === 'y' ? '/' : '', a.r || '', a.rv ? (a.rv.s === 'major' ? 'Major' : 'Minor') : '', a.rv ? (a.rv.d === 'go' ? 'CAN PROCEED' : 'HOLD') : '', a.rv ? a.rv.r : '', a.rv ? a.rv.name : '', r.done_name, fmtDT(r.submitted_at), r.check_name || '', fmtDT(r.check_at), d.verify_name || '', fmtDT(d.verify_at), r.status]);
     }))));
     const blob = new Blob(['﻿' + out.map(r => r.map(csvCell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'F52-machine-inspection-' + f.from + '-to-' + f.to + '.csv'; document.body.appendChild(a); a.click(); a.remove();
@@ -730,7 +771,7 @@ async function vUsers() {
   S.users = await rpc('mic_users_list');
   const wait = S.users.filter(u => !u.active).length;
   const ticks = u => '<div class="fx">' + FUNCS.map(f => '<label class="small nowrap"><input type="checkbox" class="u-f" value="' + f + '"' + ((u.funcs || []).includes(f) ? ' checked' : '') + '> ' + FUNC()[f] + '</label>').join('') + '</div>';
-  shell('users', '<div class="row" style="margin-bottom:6px"><h2>' + T('Users', 'Pengguna') + '</h2><span class="sp"></span><button class="btn pri" data-act="uadd">+ ' + T('Add user', 'Tambah pengguna') + '</button></div><p class="small muted">' + T('Tick every function the person may do. Inspect = fill in the checklist (Done by). Check by = sign each round (QC Inspector). Verify by = verify the day checklist (Production Executive). Admin = users and checklist setup. A person still cannot check their own round, or verify a checklist they filled in or checked.', 'Tandakan setiap fungsi yang dibenarkan. Periksa = mengisi senarai semak (Done by). Check by = menandatangani setiap pusingan (QC Inspector). Verify by = mengesahkan senarai semak harian (Production Executive). Admin = pengguna dan tetapan senarai semak. Seseorang tetap tidak boleh menyemak pusingannya sendiri, atau mengesahkan senarai semak yang diisi atau disemaknya sendiri.') + '</p>' +
+  shell('users', '<div class="row" style="margin-bottom:6px"><h2>' + T('Users', 'Pengguna') + '</h2><span class="sp"></span><button class="btn pri" data-act="uadd">+ ' + T('Add user', 'Tambah pengguna') + '</button></div><p class="small muted">' + T('Tick every function the person may do. Inspect = fill in the checklist (Done by). Check by = sign each inspection (QC Inspector). Verify by = verify the day checklist (Production Executive). Admin = users and checklist setup. A person still cannot check their own inspection, or verify a checklist they filled in or checked.', 'Tandakan setiap fungsi yang dibenarkan. Periksa = mengisi senarai semak (Done by). Check by = menandatangani setiap pemeriksaan (QC Inspector). Verify by = mengesahkan senarai semak harian (Production Executive). Admin = pengguna dan tetapan senarai semak. Seseorang tetap tidak boleh menyemak pemeriksaannya sendiri, atau mengesahkan senarai semak yang diisi atau disemaknya sendiri.') + '</p>' +
     (wait ? '<div class="banner">' + wait + ' ' + T('account(s) not active', 'akaun tidak aktif') + '</div>' : '') +
     '<div class="tbl-wrap"><table class="list"><tr><th>' + T('Name on checklist', 'Nama pada senarai semak') + '</th><th>' + T('Sign-in', 'Log masuk') + '</th><th>' + T('Functions', 'Fungsi') + '</th><th>' + T('Active', 'Aktif') + '</th><th></th></tr>' +
     S.users.map(u => '<tr data-u="' + u.id + '"><td><input type="text" class="u-name" value="' + esc(u.name) + '" maxlength="80" aria-label="Name" style="min-width:140px"></td><td>' + esc(u.login) + '<div class="small muted">' + (u.username ? T('username', 'nama pengguna') : 'email') + ' &middot; ' + fmtD(u.created_at) + '</div></td>' +
@@ -813,11 +854,12 @@ document.addEventListener('click', async e => {
     else if (a === 'start') { el.disabled = true; const id = await rpc('mic_start_round', {p_machine: d.k, p_date: d.d, p_time: nowHM(), p_batch: ''}); go('round/' + d.k + '/' + d.d + '/' + id); }
     else if (a === 'zoom') { const it = findItem(d.id); lightbox(it.imgs, '<b>' + esc(it.name) + '</b><br>' + esc(it.crit)); }
     else if (a === 'ans') setAns(d.id, d.v);
+    else if (a === 'rv') { const note = ($('[data-rvn="' + d.id + '"]') || {}).value || ''; if (d.d === 'go' && !note.trim()) { $('[data-rvn="' + d.id + '"]').focus(); return toast(T('Please write why the machine can proceed', 'Sila tulis sebab mesin boleh diteruskan'), true); } const y = window.scrollY; await rpc('mic_review_item', {p_round: S.round.id, p_item: d.id, p_sev: d.s, p_dec: d.d, p_note: note}); await vRound(S.rkey, S.rdate, S.round.id); window.scrollTo(0, y); toast(d.d === 'go' ? T('Decision saved: can proceed', 'Keputusan disimpan: boleh teruskan') : T('Decision saved: HOLD', 'Keputusan disimpan: TAHAN')); }
     else if (a === 'submit') await submitRound();
-    else if (a === 'delround') { if (await ask({title: T('Delete this draft round?', 'Padam draf pusingan ini?'), body: T('The answers in this draft will be removed.', 'Jawapan dalam draf ini akan dibuang.'), ok: T('Delete', 'Padam'), danger: true})) { clearTimeout(S.timer); S.editing = false; S.dirty = false; await rpc('mic_delete_round', {p_id: S.round.id}); try { localStorage.removeItem(draftKey(S.round.id)); } catch (x) {} go('sheet/' + S.rkey + '/' + S.rdate); } }
+    else if (a === 'delround') { if (await ask({title: T('Delete this draft inspection?', 'Padam draf pemeriksaan ini?'), body: T('The answers in this draft will be removed.', 'Jawapan dalam draf ini akan dibuang.'), ok: T('Delete', 'Padam'), danger: true})) { clearTimeout(S.timer); S.editing = false; S.dirty = false; await rpc('mic_delete_round', {p_id: S.round.id}); try { localStorage.removeItem(draftKey(S.round.id)); } catch (x) {} go('sheet/' + S.rkey + '/' + S.rdate); } }
     else if (a === 'check') { const n = await ask({title: T('Sign as Check by?', 'Tandatangan sebagai Check by?'), body: T('You confirm the operator carried out this inspection and the answers are correct. Your name and the time will be recorded.', 'Anda mengesahkan operator telah menjalankan pemeriksaan ini dan jawapannya betul. Nama dan masa anda akan direkod.') + (S.round.ng ? '<div class="banner bad">' + S.round.ng + ' ' + T('part(s) Not OK or missing. Make sure F45 has been raised.', 'bahagian Tidak OK atau tiada. Pastikan F45 telah dibuat.') + '</div>' : ''), input: 'text', label: T('Note (optional)', 'Catatan (pilihan)'), ok: T('Sign Check by', 'Tandatangan Check by')}); if (n !== null) { await rpc('mic_check_round', {p_id: S.round.id, p_ok: true, p_note: n || null}); toast(T('Checked', 'Disemak')); go('sheet/' + S.rkey + '/' + S.rdate); } }
     else if (a === 'return') { const n = await ask({title: T('Return to operator for correction', 'Pulangkan kepada operator untuk pembetulan'), input: 'text', label: T('What must be corrected? (required)', 'Apa yang perlu dibetulkan? (wajib)'), required: true, ok: T('Return', 'Pulangkan'), danger: true}); if (n) { await rpc('mic_check_round', {p_id: S.round.id, p_ok: false, p_note: n}); toast(T('Returned to operator', 'Dipulangkan kepada operator')); go('sheet/' + S.rkey + '/' + S.rdate); } }
-    else if (a === 'verify') { const ng = S.sheet.rounds.reduce((x, r) => x + (r.ng || 0), 0); const n = await ask({title: T('Verify this checklist?', 'Sahkan senarai semak ini?'), body: T('All rounds have been checked. After you verify, the checklist is locked. Your name and the time will be recorded as <b>Verify by</b>.', 'Semua pusingan telah disemak. Selepas disahkan, senarai semak dikunci. Nama dan masa anda akan direkod sebagai <b>Verify by</b>.') + (ng ? '<div class="banner bad">' + ng + ' ' + T('Not OK / missing in total. Confirm corrective action (F45) is recorded.', 'Tidak OK / tiada keseluruhannya. Pastikan tindakan pembetulan (F45) direkod.') + '</div>' : ''), input: 'text', label: T('Note (optional)', 'Catatan (pilihan)'), ok: T('Verify', 'Sahkan')}); if (n !== null) { await rpc('mic_verify', {p_id: S.sheet.id, p_note: n || null}); toast(T('Verified', 'Disahkan')); route(); } }
+    else if (a === 'verify') { const ng = S.sheet.rounds.reduce((x, r) => x + (r.ng || 0), 0); const n = await ask({title: T('Verify this checklist?', 'Sahkan senarai semak ini?'), body: T('All inspections have been checked. After you verify, the checklist is locked. Your name and the time will be recorded as <b>Verify by</b>.', 'Semua pemeriksaan telah disemak. Selepas disahkan, senarai semak dikunci. Nama dan masa anda akan direkod sebagai <b>Verify by</b>.') + (ng ? '<div class="banner bad">' + ng + ' ' + T('Not OK / missing in total. Confirm corrective action (F45) is recorded.', 'Tidak OK / tiada keseluruhannya. Pastikan tindakan pembetulan (F45) direkod.') + '</div>' : ''), input: 'text', label: T('Note (optional)', 'Catatan (pilihan)'), ok: T('Verify', 'Sahkan')}); if (n !== null) { await rpc('mic_verify', {p_id: S.sheet.id, p_note: n || null}); toast(T('Verified', 'Disahkan')); route(); } }
     else if (a === 'reopen') { const n = await ask({title: T('Reopen this verified checklist?', 'Buka semula senarai semak yang telah disahkan?'), input: 'text', label: T('Reason (required, kept in the change history)', 'Sebab (wajib, disimpan dalam sejarah perubahan)'), required: true, ok: T('Reopen', 'Buka semula'), danger: true}); if (n) { await rpc('mic_reopen', {p_id: S.sheet.id, p_reason: n}); route(); } }
     else if (a === 'print') printSheet(d.ph === '1');
     else if (a === 'pdf') { el.disabled = true; try { await pdfSheet(); } finally { el.disabled = false; } }

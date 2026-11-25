@@ -15,7 +15,8 @@
   const rk = () => !me || !me.active ? 0 : me.funcs.includes('admin') ? 4 : me.funcs.includes('verify') ? 3 : me.funcs.includes('check') ? 2 : 1;
   const has = x => me && me.active && me.funcs.includes(x);
   const need = r => { if (!me) E('Sila log masuk / Please sign in'); if (rk() < r) E('Akaun anda tidak dibenarkan untuk tindakan ini / Your account is not allowed to do this'); };
-  const rj = (r, full) => { const o = Object.assign({}, r); if (!full) { delete o.items; delete o.refs; } return o; };
+  const isNg = x => x.c === 'ng' || x.p === 'n';
+  const rj = (r, full) => { const o = Object.assign({}, r); o.rv_pending = Object.values(r.items).filter(x => isNg(x) && !x.rv).length; o.rv_hold = Object.values(r.items).filter(x => x.rv && x.rv.d === 'hold').length; if (!full) { delete o.items; delete o.refs; } return o; };
   const findR = id => { for (const i of DB.insp) { const r = i.rounds.find(x => x.id === id); if (r) return [i, r]; } E('Pusingan tidak dijumpai / Round not found'); };
   const lg = (act, i, detail) => DB.log.push({at: new Date().toISOString(), name: me.name, act, insp: i && i.id, detail});
   const F = {
@@ -53,9 +54,10 @@
     mic_delete_round(a) { need(1); const [i, r] = findR(a.p_id); if (r.status !== 'draft') E('x / Only a draft can be deleted'); i.rounds = i.rounds.filter(x => x !== r); },
     mic_check_round(a) {
       need(1); if (!has('check')) E('x / Your account is not allowed to do this'); const [i, r] = findR(a.p_id); if (i.status === 'verified') E('x / This checklist has already been verified');
-      if (a.p_ok) { if (r.status !== 'submitted') E('x / This round is not waiting for a check'); if (r.done_by === me.id) E('x / You cannot check your own inspection'); Object.assign(r, {status: 'checked', check_by: me.id, check_name: me.name, check_at: new Date().toISOString(), note: a.p_note || null}); lg('round_check', i, {round: r.seq, note: a.p_note}); }
+      if (a.p_ok) { if (r.status !== 'submitted') E('x / This round is not waiting for a check'); if (r.done_by === me.id) E('x / You cannot check your own inspection'); if (Object.values(r.items).some(x => isNg(x) && !x.rv)) E('x / Decide Can proceed or Hold for every Not OK part first'); Object.assign(r, {status: 'checked', check_by: me.id, check_name: me.name, check_at: new Date().toISOString(), note: a.p_note || null}); lg('round_check', i, {round: r.seq, note: a.p_note}); }
       else { if (!a.p_note) E('x / Please give a reason'); Object.assign(r, {status: 'draft', check_by: null, check_name: null, check_at: null, submitted_at: null, note: a.p_note}); lg('round_return', i, {round: r.seq, reason: a.p_note}); }
     },
+    mic_review_item(a) { need(1); if (!has('check') && !has('verify')) E('x / Your account is not allowed to do this'); const [i, r] = findR(a.p_round); if (i.status === 'verified') E('x / This checklist has already been verified'); if (r.done_by === me.id) E('x / You cannot decide on your own inspection'); const x = r.items[a.p_item]; const d = a.p_sev === 'major' ? 'hold' : a.p_dec; if (d === 'go' && !String(a.p_note).trim()) E('x / Please write why the machine can proceed'); x.rv = {s: a.p_sev, d, r: a.p_note, by: me.id, name: me.name, at: new Date().toISOString()}; lg('item_review', i, {round: r.seq, note: a.p_note}); },
     mic_verify(a) {
       need(1); if (!has('verify')) E('x / Your account is not allowed to do this'); const i = DB.insp.find(x => x.id === a.p_id); if (i.rounds.some(r => r.status !== 'checked')) E('x / Every round must be checked (Check by) first');
       if (i.rounds.some(r => r.done_by === me.id || r.check_by === me.id)) E('x / You cannot verify a checklist that you filled in or checked yourself');

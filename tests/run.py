@@ -18,7 +18,7 @@ def setup(ctx):
     pg = ctx.new_page()
     pg.route('**/vendor/supabase.js', lambda r: r.fulfill(body=FAKE, content_type='application/javascript'))
     pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)))
-    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text and 'new account' not in m.text and 'already in the list' not in m.text else None)
+    pg.on('console', lambda m: errs.append('console: ' + m.text) if m.type == 'error' and 'favicon' not in m.text and 'new account' not in m.text and 'can proceed' not in m.text and 'already in the list' not in m.text else None)
     pg.goto('http://127.0.0.1:8765/index.html'); pg.wait_for_selector('#authf'); return pg
 def login(pg, user):
     pg.fill('[name=uid]', user); pg.fill('[name=pw]', 'x'); pg.click('#authf button[type=submit]'); pg.wait_for_selector('.grid')
@@ -68,16 +68,22 @@ with sync_playwright() as p:
     ym = pg.evaluate("S.today.slice(0,7).replace('-','')"); check('Batch ' + ym + '-001' in pg.locator('.rcard').inner_text(), 'auto batch number YYYYMM-001'); 
     check(pg.locator('.rcard a.btn').inner_text() == 'View', 'operator can only view own submitted round')
     # second round (change-over) by the same operator
-    pg.click('[data-act=start]'); pg.wait_for_selector('.item')
+    pg.click('[data-act=start]'); pg.wait_for_selector('.item'); check(pg.locator('#r-batch').count() == 0 and 'Nothing to type' in pg.locator('.auto').inner_text(), 'batch is text, not a box')
     for i in ids: pg.click('#it-%s [data-v=ok]' % i)
-    pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); check(pg.locator('.rcard').count() == 2, '2 rounds'); check('Batch ' + ym + '-002' in pg.locator('.rcard >> nth=1').inner_text(), 'second round gets -002')
+    pg.click('#it-%s [data-v=ng]' % ids[4]); pg.fill('[data-rm="%s"]' % ids[4], 'Small dent on outer cover')
+    pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); check(pg.locator('.rcard').count() == 2, '2 rounds'); check('1 to decide' in pg.locator('.rcard >> nth=1').inner_text(), 'round shows 1 to decide'); check('Batch ' + ym + '-002' in pg.locator('.rcard >> nth=1').inner_text(), 'second round gets -002')
     signout(pg)
     # --- checker ---
-    login(pg, 'siti'); check('2 round(s) waiting for Check by' in pg.locator('main').inner_text(), 'checker banner')
+    login(pg, 'siti'); check('2 inspection(s) waiting for Check by' in pg.locator('main').inner_text(), 'checker banner')
     pg.click('.mcard >> text=Drum Mixer 250 kg'); pg.wait_for_selector('.rcard'); check(pg.locator('[data-act=verify]').count() == 0, 'checker has no verify button')
     pg.click('.rcard >> nth=0 >> a.btn'); pg.wait_for_selector('[data-act=check]'); pg.screenshot(path=OUT + '/08-check-desktop.png')
     pg.click('[data-act=return]'); pg.fill('#askv', 'Recheck the butterfly valve'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); check('Returned for correction' in pg.locator('.rcard >> nth=0').inner_text(), 'round returned')
-    pg.click('.rcard >> nth=1 >> a.btn'); pg.click('[data-act=check]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
+    pg.click('.rcard >> nth=1 >> a.btn'); pg.wait_for_selector('.rv'); check(pg.locator('[data-act=check]').is_disabled(), 'Check by blocked until a decision is made')
+    pg.click('.rv [data-s=minor][data-d=go]'); check('why the machine can proceed' in pg.locator('.toast').inner_text(), 'Can proceed needs a note')
+    pg.fill('.rv textarea', 'Outer cover only, no product contact. F45 raised.'); pg.screenshot(path=OUT + '/08a-decision.png'); pg.click('.rv [data-s=minor][data-d=go]'); pg.wait_for_selector('.rv .chip.ok')
+    check('Can proceed' in pg.locator('.rv').inner_text() and 'Siti QC' in pg.locator('.rv').inner_text(), 'decision recorded with name')
+    pg.click('.rv [data-s=major][data-d=hold]'); pg.wait_for_selector('.rv .chip.bad >> text=HOLD'); pg.click('#it-%s' % ids[0]); pg.fill('.rv textarea', 'Outer cover only, no product contact. F45 raised.'); pg.click('.rv [data-s=minor][data-d=go]'); pg.wait_for_selector('.rv .chip.ok')
+    pg.click('[data-act=check]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
     signout(pg)
     login(pg, 'ali'); pg.click('.mcard >> text=Drum Mixer 250 kg'); pg.click('.rcard >> nth=0 >> a.btn'); pg.wait_for_selector('.banner.bad')
     pg.click('#it-%s [data-v=ok]' % ids[2]); pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard'); signout(pg)
@@ -90,13 +96,13 @@ with sync_playwright() as p:
     check(pg.locator('table.f52 td.sig >> nth=0').inner_text() == 'Siti QC', 'check by on form view'); check(pg.locator('table.f52 td.sig >> nth=1').inner_text() == 'Farah Exec', 'verify by on form view')
     # print layout
     pg.evaluate("window.print = () => { window.__printed = true };0"); pg.click('[data-act=print][data-ph="1"]'); pg.wait_for_function('window.__printed === true', timeout=15000)
-    check(pg.locator('#print .pg').count() == 1 and 'F52/1' in pg.locator('#print').inner_text(), 'print built')
+    check(pg.locator('#print .pg').count() == 1 and 'F52/1' in pg.locator('#print').inner_text(), 'print built'); check('CAN PROCEED' in pg.locator('#print').inner_text() and 'Small dent on outer cover' in pg.locator('#print').inner_text(), 'print shows the decision')
     pg.emulate_media(media='print'); pg.pdf(path=OUT + '/print-drum250.pdf', prefer_css_page_size=True); pg.emulate_media(media='screen')
     with pg.expect_download(timeout=60000) as d: pg.click('[data-act=pdf]')
     d.value.save_as(OUT + '/download-drum250.pdf'); check(d.value.suggested_filename == 'F52-1_Drum-Mixer-250-kg_' + pg.evaluate('S.sheet.date') + '.pdf', 'pdf name ' + d.value.suggested_filename); check(os.path.getsize(OUT + '/download-drum250.pdf') > 20000, 'pdf has content')
     pg.click('.nav >> text=Records'); pg.wait_for_selector('table.list tr.click'); pg.screenshot(path=OUT + '/10-records-desktop.png')
     with pg.expect_download() as d: pg.click('[data-act=csv]')
-    csv = open(d.value.path(), encoding='utf-8-sig').read(); check(csv.count('\n') == 16 and 'Valve handle' not in csv and 'Farah Exec' in csv, 'csv rows %d' % csv.count('\n'))
+    csv = open(d.value.path(), encoding='utf-8-sig').read(); check(csv.count('\n') == 16 and 'Valve handle' not in csv and 'Farah Exec' in csv and 'CAN PROCEED' in csv, 'csv rows %d' % csv.count('\n'))
     signout(pg)
     # --- admin ---
     login(pg, 'admin@demo.my'); check(pg.locator('.nav a').count() == 5, 'admin sees 4 tabs + Guide')

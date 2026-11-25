@@ -9,7 +9,7 @@ class Q(http.server.SimpleHTTPRequestHandler):
 srv = http.server.ThreadingHTTPServer(('127.0.0.1', 8766), functools.partial(Q, directory=ROOT)); threading.Thread(target=srv.serve_forever, daemon=True).start()
 FAKE = open(os.path.join(ROOT, 'tests', 'fake-supabase.js')).read()
 PHONE = {'width': 390, 'height': 760}; DESK = {'width': 1180, 'height': 760}
-TXT = {'en': dict(rm='Valve handle is loose', ret='Please check the butterfly valve again', nm='Fadzil bin Hassan'), 'bm': dict(rm='Pemegang injap longgar', ret='Sila periksa semula butterfly valve', nm='Fadzil bin Hassan')}
+TXT = {'en': dict(rm='Small dent on the valve handle', ret='Please check the butterfly valve again', nm='Fadzil bin Hassan', dn='Handle only, no product contact. Valve closes fully. F45 raised.'), 'bm': dict(rm='Kemek kecil pada pemegang injap', ret='Sila periksa semula butterfly valve', nm='Fadzil bin Hassan', dn='Pemegang sahaja, tiada sentuhan produk. Injap tutup rapat. F45 dibuat.')}
 def run(lang, b):
     ctx = b.new_context(viewport=PHONE, device_scale_factor=2, locale='en-GB'); ctx.add_init_script("try{localStorage.setItem('mic_lang','%s')}catch(e){}" % lang)
     pg = ctx.new_page(); pg.route('**/vendor/supabase.js', lambda r: r.fulfill(body=FAKE, content_type='application/javascript'))
@@ -34,11 +34,11 @@ def run(lang, b):
     pg.evaluate("window.scrollTo(0, document.body.scrollHeight);0"); shot('submit-bar')
     pg.click('[data-act=submit]'); pg.wait_for_selector('.modal'); shot('submit-confirm'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); shot('f45'); pg.click('.modal [data-x="1"]')
     pg.wait_for_selector('.rcard'); pg.evaluate("window.scrollTo(0,0);0"); shot('sheet-submitted', 700)
-    signout(); login('siti'); shot('today-checker', 420); drum(); pg.click('.rcard a.btn'); pg.wait_for_selector('[data-act=check]'); pg.evaluate("document.getElementById('it-%s').scrollIntoView({block:'center'});0" % ids[2]); shot('check')
+    signout(); login('siti'); shot('today-checker', 420); drum(); pg.click('.rcard a.btn'); pg.wait_for_selector('[data-act=check]'); pg.evaluate("document.getElementById('it-%s').scrollIntoView({block:'center'});0" % ids[2]); shot('check'); pg.fill('.rv textarea', TXT[lang]['dn']); pg.evaluate("document.querySelector('.rv').scrollIntoView({block:'center'});0"); shot('decision')
     pg.click('[data-act=return]'); pg.fill('#askv', TXT[lang]['ret']); shot('return-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
     signout(); login('ali'); drum(); shot('sheet-returned', 700); pg.click('.rcard a.btn'); pg.wait_for_selector('.banner.bad'); shot('returned', 480)
     pg.click('[data-act=submit]'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
-    signout(); login('siti'); drum(); pg.click('.rcard a.btn'); pg.click('[data-act=check]'); pg.wait_for_selector('.modal'); shot('check-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
+    signout(); login('siti'); drum(); pg.click('.rcard a.btn'); pg.wait_for_selector('.rv'); pg.fill('.rv textarea', TXT[lang]['dn']); pg.click('.rv [data-s=minor][data-d=go]'); pg.wait_for_selector('.rv .chip.ok'); pg.evaluate("document.querySelector('.rv').scrollIntoView({block:'center'});0"); shot('decision-done'); pg.click('[data-act=check]'); pg.wait_for_selector('.modal'); shot('check-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.rcard')
     signout(); login('farah@demo.my'); shot('today-verifier', 420); drum(); shot('sheet-verify', 620); pg.click('[data-act=verify]'); pg.wait_for_selector('.modal'); shot('verify-dialog'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.banner.info'); shot('sheet-verified', 700)
     pg.click('[data-act=menu]'); pg.wait_for_selector('.modal'); shot('menu', 560); pg.click('.modal [data-act=closem]')
     pg.set_viewport_size(DESK); pg.evaluate("document.querySelector('.f52-wrap').scrollIntoView({block:'start'});0"); shot('form-view', 520)
