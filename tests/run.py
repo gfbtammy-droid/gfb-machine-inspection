@@ -96,7 +96,7 @@ with sync_playwright() as p:
     check(pg.locator('table.f52 td.sig >> nth=0').inner_text() == 'Siti QC', 'check by on form view'); check(pg.locator('table.f52 td.sig >> nth=1').inner_text() == 'Farah Exec', 'verify by on form view')
     # print layout
     pg.evaluate("window.print = () => { window.__printed = true };0"); pg.click('[data-act=print][data-ph="1"]'); pg.wait_for_function('window.__printed === true', timeout=15000)
-    check(pg.locator('#print .pg').count() == 1 and 'F52/1' in pg.locator('#print').inner_text(), 'print built'); check('CAN PROCEED' in pg.locator('#print').inner_text() and 'Small dent on outer cover' in pg.locator('#print').inner_text(), 'print shows the decision')
+    check(pg.locator('#print .pg').count() == 1 and 'F52/1' in pg.locator('#print').inner_text(), 'print built'); check('CAN PROCEED' in pg.locator('#print').inner_text() and 'Small dent on outer cover' in pg.locator('#print').inner_text(), 'print shows the decision'); check('[MINOR: CAN PROCEED]' in pg.locator('#print table.f52').first.inner_text() and '[MINOR: CAN PROCEED]' in pg.locator('.f52-wrap').inner_text(), 'decision shown inside the F52 table')
     pg.emulate_media(media='print'); pg.pdf(path=OUT + '/print-drum250.pdf', prefer_css_page_size=True); pg.emulate_media(media='screen')
     with pg.expect_download(timeout=60000) as d: pg.click('[data-act=pdf]')
     d.value.save_as(OUT + '/download-drum250.pdf'); check(d.value.suggested_filename == 'F52-1_Drum-Mixer-250-kg_' + pg.evaluate('S.sheet.date') + '.pdf', 'pdf name ' + d.value.suggested_filename); check(os.path.getsize(OUT + '/download-drum250.pdf') > 20000, 'pdf has content')

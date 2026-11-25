@@ -137,6 +137,8 @@ table.f52 td.crit img{height:44px;margin:2px 1px 0;vertical-align:middle;border:
 table.f52 td.ng{color:#b3261e;font-weight:700}
 table.f52 td.sig{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;width:26px}
 table.f52 td.rm{font-size:10px;text-align:left;max-width:110px}
+table.f52 .rm{font-size:10px;font-weight:400;color:#111}
+table.f52 .rm.dec{font-weight:700;color:#b3261e}
 #print{display:none}
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:14px;overflow:auto}
 .lightbox img{max-width:96vw;max-height:70vh;border-radius:8px;background:#fff}
@@ -417,12 +419,13 @@ async function vSheet(key, date) {
 }
 
 /* F52 layout: used for the on-screen form view and for printing */
+function rvLabel(a) { const v = a && a.rv; return v ? (v.s === 'major' ? 'MAJOR' : 'MINOR') + ': ' + (v.d === 'go' ? 'CAN PROCEED' : 'HOLD') : 'DECISION PENDING'; }
 function ansCells(t, it, r) {
   const a = r && r.items ? r.items[it.id] : null;
   if (!r || r.status === 'draft' || !a) return '<td></td><td></td><td></td>';
   const by = '<td title="' + esc(r.done_name) + '">' + esc(initials(r.done_name)) + '</td>';
   if (a.c === 'na') return '<td>N/A' + (a.r ? '<div class="rm">' + esc(a.r) + '</div>' : '') + '</td><td>-</td>' + by;
-  const rm = a.r ? '<div class="rm">' + esc(a.r) + '</div>' : '';
+  const rm = (a.r ? '<div class="rm">' + esc(a.r) + '</div>' : '') + (a.c === 'ng' || a.p === 'n' ? '<div class="rm dec">[' + rvLabel(a) + ']</div>' : '');
   return '<td class="' + (a.c === 'ng' ? 'ng' : '') + '">' + (a.p === 'n' ? '-' : a.c === 'ng' ? 'NOT OK' : 'OK') + rm + '</td><td class="' + (a.p === 'n' ? 'ng' : '') + '">' + (a.p === 'n' ? 'X' : '/') + '</td>' + by;
 }
 function f52Table(t, rounds, sh, date, o) {
@@ -551,7 +554,7 @@ async function pdfSheet() {
         cols.forEach(r => {
           const a = r && r.items ? r.items[it.id] : null, C = {halign: 'center', valign: 'middle'};
           if (!a) return row.push({content: '', styles: C}, {content: '', styles: C}, {content: '', styles: C});
-          const by = {content: pdfSafe(initials(r.done_name)), styles: C}, rm = a.r ? '\n' + pdfSafe(a.r) : '';
+          const by = {content: pdfSafe(initials(r.done_name)), styles: C}, rm = (a.r ? '\n' + pdfSafe(a.r) : '') + (a.c === 'ng' || a.p === 'n' ? '\n[' + rvLabel(a) + ']' : '');
           if (a.c === 'na') row.push({content: 'N/A' + rm, styles: C}, {content: '-', styles: C}, by);
           else row.push({content: (a.p === 'n' ? '-' : a.c === 'ng' ? 'NOT OK' : 'OK') + rm, styles: Object.assign({}, C, a.c === 'ng' ? {textColor: RED, fontStyle: 'bold'} : {})}, {content: a.p === 'n' ? 'X' : '/', styles: Object.assign({}, C, a.p === 'n' ? {textColor: RED, fontStyle: 'bold'} : {})}, by);
         });
