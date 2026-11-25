@@ -328,6 +328,13 @@ function shell(tab, html) {
     '<button data-act="lang" aria-label="Language">' + (LANG === 'bm' ? 'EN' : 'BM') + '</button><button data-act="menu" aria-label="Account">&#9776;</button></div>' +
     '<nav class="nav">' + n('today', T('Today', 'Hari ini'), 'today') + n('records', T('Records', 'Rekod'), 'records') + (adm ? n('setup', T('Checklists', 'Senarai semak'), 'setup') + n('users', T('Users', 'Pengguna'), 'users') : '') + '<a href="guide.html?lang=' + LANG + '" target="_blank" rel="noopener">&#128214; ' + T('Guide', 'Panduan') + '</a></nav><main>' + html + '</main>';
 }
+// Auto-refresh for the page that is open. Only ONE timer may exist, it stops as soon as the user moves to
+// another page, and it never redraws the screen unless the data really changed.
+function setPoll(fn) {
+  clearInterval(S.poll); const at = location.hash;
+  const id = setInterval(() => { if (location.hash !== at) return clearInterval(id); if (!document.hidden && !$('.modal-bg') && !$('.lightbox')) fn().catch(() => {}); }, window.MIC_POLL_MS || 30000);
+  S.poll = id;
+}
 function go(h) { if (location.hash === '#/' + h) route(); else location.hash = '#/' + h; }
 async function route() {
   clearInterval(S.poll); S.poll = null; S.editing = false;
@@ -358,8 +365,10 @@ function roundChips(rs) {
   if (ng) h += '<span class="chip bad">' + ng + ' ' + T('Not OK', 'Tidak OK') + '</span> ';
   return h + rvChips(rs);
 }
-async function vToday() {
-  S.day = await rpc('mic_range', {p_from: S.date, p_to: S.date});
+async function vToday(quiet) {
+  const at = location.hash, day = await rpc('mic_range', {p_from: S.date, p_to: S.date}), sig = S.date + JSON.stringify(day);
+  if (quiet && (location.hash !== at || sig === S.daySig)) return;   // moved away, or nothing changed
+  S.day = day; S.daySig = sig;
   const cards = S.tpls.map(t => {
     const d = S.day.find(x => x.machine === t.key), rs = d ? d.rounds : [];
     let st;
@@ -380,14 +389,17 @@ async function vToday() {
     (can('check') && toCheck ? '<div class="banner info">' + toCheck + ' ' + T('inspection(s) waiting for Check by', 'pemeriksaan menunggu Check by') + '</div>' : '') +
     (can('verify') && toVerify ? '<div class="banner info">' + toVerify + ' ' + T('checklist(s) ready for Verify by', 'senarai semak sedia untuk Verify by') + '</div>' : '') +
     '<div class="grid">' + cards + '</div>');
-  S.poll = setInterval(() => { if (!document.hidden && !$('.modal-bg')) vToday().catch(() => {}); }, 30000);
+  setPoll(() => vToday(true));
 }
 
 /* ---------- Sheet (one machine, one day) ---------- */
 function canStart(t, sh, date) { return can('fill') && t.status !== 'not_in_use' && (!sh || sh.status !== 'verified') && (can('admin') || (date <= S.today && date >= addDays(S.today, -1))); }
 function stChip(r) { return r.status === 'draft' ? '<span class="chip warn">' + T('In progress', 'Sedang diisi') + '</span>' : r.status === 'submitted' ? '<span class="chip info">' + T('Waiting for check', 'Menunggu semakan') + '</span>' : '<span class="chip ok">&#10003; ' + T('Checked', 'Disemak') + '</span>'; }
-async function vSheet(key, date) {
-  const sh = await rpc('mic_sheet', {p_machine: key, p_date: date}); S.sheet = sh;
+async function vSheet(key, date, quiet) {
+  const at = location.hash, sh = await rpc('mic_sheet', {p_machine: key, p_date: date}), sig = key + date + JSON.stringify(sh);
+  if (quiet && (location.hash !== at || sig === S.sheetSig)) return;   // moved away, or nothing changed
+  const fw = quiet && $('.f52-wrap'), keep = fw ? [fw.scrollLeft, fw.scrollTop, window.scrollY, !!($('main details') || {}).open] : null;
+  S.sheet = sh; S.sheetSig = sig;
   const t = sh ? sh.template : tpl(key), rs = sh ? sh.rounds : [];
   const ver = sh && sh.status === 'verified';
   const allChecked = rs.length && rs.every(r => r.status === 'checked');
@@ -415,7 +427,8 @@ async function vSheet(key, date) {
   if (sh && sh.log && sh.log.length) h += '<details style="margin-top:14px"><summary class="muted">' + T('Change history', 'Sejarah perubahan') + ' (' + sh.log.length + ')</summary><div class="tbl-wrap" style="margin-top:8px"><table class="list"><tr><th>' + T('When', 'Bila') + '</th><th>' + T('Who', 'Siapa') + '</th><th>' + T('What', 'Apa') + '</th></tr>' +
     sh.log.map(l => '<tr><td class="nowrap">' + fmtDT(l.at) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.act.replace(/_/g, ' ')) + (l.detail && l.detail.round ? ' #' + l.detail.round : '') + (l.detail && (l.detail.reason || l.detail.note) ? ' &ndash; ' + esc(l.detail.reason || l.detail.note) : '') + '</td></tr>').join('') + '</table></div></details>';
   shell('today', h);
-  S.poll = setInterval(() => { if (!document.hidden && !$('.modal-bg') && !$('.lightbox')) vSheet(key, date).catch(() => {}); }, 30000);
+  if (keep) { const w = $('.f52-wrap'); if (w) { w.scrollLeft = keep[0]; w.scrollTop = keep[1]; } const dt = $('main details'); if (dt && keep[3]) dt.open = true; window.scrollTo(0, keep[2]); }
+  setPoll(() => vSheet(key, date, true));
 }
 
 /* F52 layout: used for the on-screen form view and for printing */
