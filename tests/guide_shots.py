@@ -30,6 +30,7 @@ def run(lang, b):
     pg.click('#it-%s [data-v=ok]' % ids[0]); pg.click('#it-%s [data-v=ok]' % ids[1]); pg.click('#it-%s [data-v=ng]' % ids[2]); pg.fill('[data-rm="%s"]' % ids[2], TXT[lang]['rm'])
     pg.evaluate("document.getElementById('it-%s').scrollIntoView({block:'center'});0" % ids[2]); shot('answers')
     pg.click('#it-%s img.ph' % ids[0]); pg.wait_for_selector('.lightbox'); shot('photo', 620); pg.click('.lightbox')
+    pg.evaluate("document.getElementById('it-%s').scrollIntoView({block:'start'});window.scrollBy(0,-110);0" % ids[0]); shot('more-btn', 430); pg.click('#it-%s [data-act=zoom2]' % ids[0]); pg.wait_for_selector('.lightbox img'); pg.wait_for_timeout(700); shot('more-photos', 700); pg.click('.lightbox')
     for i in ids[3:]: pg.click('#it-%s [data-v=ok]' % i)
     pg.evaluate("window.scrollTo(0, document.body.scrollHeight);0"); shot('submit-bar')
     pg.click('[data-act=submit]'); pg.wait_for_selector('.modal'); shot('submit-confirm'); pg.click('.modal [data-x="1"]'); pg.wait_for_selector('.modal >> text=F45'); shot('f45'); pg.click('.modal [data-x="1"]')

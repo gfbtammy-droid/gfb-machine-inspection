@@ -37,6 +37,7 @@ with sync_playwright() as p:
     check(pg.locator('.nav a').count() == 3 and pg.locator('.nav a >> nth=2').get_attribute('href').startswith('guide.html'), 'operator sees 2 tabs + Guide')
     pg.click('.mcard >> text=Semi-Auto Packing Machine 3'); pg.wait_for_selector('.f52')
     check(pg.locator('[data-act=start]').count() == 0, 'PM3 not in use: no start button')
+    check('Criteria pending' not in pg.evaluate("document.body.innerText"), 'no machine is marked criteria pending')
     pg.go_back(); pg.wait_for_selector('.grid')
     pg.click('.mcard >> text=Auto-Packing Machine 1'); pg.wait_for_selector('[data-act=start]'); check(pg.locator('[data-act=pdf]').is_disabled(), 'pdf button disabled before any submission'); pg.click('[data-act=start]'); pg.wait_for_selector('.item')
     n = pg.locator('.item').count(); check(n == 53, 'AP1 has 53 parts, got %d' % n)
@@ -59,6 +60,8 @@ with sync_playwright() as p:
     # fake state is per page, so run the whole flow in one desktop page from here
     pg = setup(desk); pg.screenshot(path=OUT + '/05-login-desktop.png'); login(pg, 'admin@demo.my'); signout(pg); login(pg, 'ali')
     pg.click('.mcard >> text=Drum Mixer 250 kg'); pg.click('[data-act=start]'); pg.wait_for_selector('.item')
+    check(pg.locator('[data-act=zoom2]').count() == 6 and pg.locator('.item .chip.warn').count() == 0, 'guide photo buttons on 6 drum parts, no review tags')
+    pg.click('[data-act=zoom2] >> nth=0'); pg.wait_for_selector('.lightbox img'); check(pg.locator('.lightbox img').count() == 2 and pg.evaluate("Array.from(document.querySelectorAll('.lightbox img')).every(i => i.complete && i.naturalWidth > 100) || new Promise(r => setTimeout(() => r(Array.from(document.querySelectorAll('.lightbox img')).every(i => i.naturalWidth > 100)), 1500))"), 'Good / No Good photos open and load'); pg.click('.lightbox')
     ids = pg.evaluate("Array.from(document.querySelectorAll('.item')).map(x=>x.id.slice(3))"); check(len(ids) == 8, 'drum 8 parts')
     for i in ids: pg.click('#it-%s [data-v=ok]' % i)
     pg.click('#it-%s [data-v=ng]' % ids[2]); pg.fill('[data-rm="%s"]' % ids[2], 'Valve handle loose')

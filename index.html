@@ -102,6 +102,8 @@ table.list tr.click{cursor:pointer} table.list tr.click:hover td{background:var(
 .item .nm{font-weight:700}
 .item .cr{color:var(--crit);font-size:13.5px;margin:2px 0 8px}
 .item .full{grid-column:1/-1}
+.btn.gn{margin-top:6px;min-height:36px;border-color:var(--accent);color:var(--accent)}
+.lightbox .tagl{color:#fff;font-weight:700;font-size:13px;background:rgba(255,255,255,.16);padding:2px 10px;border-radius:99px}
 .auto{min-height:42px;padding:9px 10px;border:1px dashed var(--line);border-radius:9px;background:var(--surface-2);font-size:14px;font-weight:400;color:var(--ink)}
 .rv{margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}
 .rv .rvb{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
@@ -243,9 +245,12 @@ function ask(o) {
     });
   });
 }
-function lightbox(imgs, cap) {
+function lightbox(imgs, cap, more) {
   const d = document.createElement('div'); d.className = 'lightbox';
-  d.innerHTML = imgs.map(i => '<img src="' + esc(i) + '" alt="">').join('') + '<div class="cap">' + cap + '</div><button class="btn">' + T('Close', 'Tutup') + '</button>';
+  d.innerHTML = (imgs.length && more && more.length ? '<span class="tagl">' + T('F52 reference photo', 'Gambar rujukan F52') + '</span>' : '') + imgs.map(i => '<img src="' + esc(i) + '" alt="">').join('') +
+    (more && more.length ? '<span class="tagl">' + T('Good / No Good examples (machine inspection 27/10/2026)', 'Contoh Baik / Tidak Baik (pemeriksaan mesin 27/10/2026)') + '</span>' + more.map(i => '<img src="' + esc(i) + '" alt="">').join('') : '') +
+    '<div class="cap">' + cap + '</div><button class="btn">' + T('Close', 'Tutup') + '</button>';
+  d.style.justifyContent = 'flex-start';
   d.addEventListener('click', () => d.remove()); document.body.appendChild(d);
 }
 
@@ -487,7 +492,7 @@ function printSheet(photos) {
   const t = sh ? sh.template : tpl(key), rs = sh ? sh.rounds.filter(r => r.status !== 'draft') : [];
   let h = f52Table(t, rs, sh, date, {screen: false, photos}); const nok = notOkRows(rs, t);
   if (rs.length) {
-    h = h.replace(/<\/div>$/, '') + '<div class="e-rec"><b>Electronic sign-off record</b> (GFB Machine Inspection app; names are stamped from each person\'s own sign-in)<table><tr><th>Inspection</th><th>Time</th><th>Batch</th><th>Done by</th><th>Submitted</th><th>Check by</th><th>Checked</th><th>Not OK / missing</th></tr>' +
+    h = h.replace(/<\/div>$/, '') + '<div class="e-rec"><b>Electronic sign-off record</b> (GFB Machine Inspection app; names are stamped from each person\'s own sign-in)<table><tr><th>Inspection #</th><th>Time</th><th>Batch</th><th>Done by</th><th>Submitted</th><th>Check by</th><th>Checked</th><th>Not OK / missing</th></tr>' +
       rs.map(r => '<tr><td>' + r.seq + '</td><td>' + esc(r.time) + '</td><td>' + esc(r.batch) + '</td><td>' + esc(r.done_name) + ' (' + esc(initials(r.done_name)) + ')</td><td>' + fmtDT(r.submitted_at) + '</td><td>' + esc(r.check_name || '') + '</td><td>' + fmtDT(r.check_at) + '</td><td>' + (r.ng || 0) + '</td></tr>').join('') +
       '</table>' + (nok.length ? '<div style="margin-top:2mm"><b>Not OK / missing parts: review and decision</b></div><table><tr>' + NOK_HEAD.map(x => '<th>' + x + '</th>').join('') + '</tr>' + nok.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' : '') + '<div style="margin-top:1.5mm">Verify by: ' + (sh.status === 'verified' ? esc(sh.verify_name) + ', ' + fmtDT(sh.verify_at) + (sh.verify_note ? ' &ndash; ' + esc(sh.verify_note) : '') : '<i>not yet verified</i>') + '</div></div></div>';
   }
@@ -606,7 +611,7 @@ async function pdfSheet() {
   doc.setFont('helvetica', 'normal'); doc.text("(GFB Machine Inspection app; names are stamped from each person's own sign-in)", M + 34, y);
   doc.autoTable({startY: y + 1.5, margin: {top: 28, left: M, right: M, bottom: 11}, theme: 'grid', tableWidth: W,
     styles: {font: 'helvetica', fontSize: 6.8, cellPadding: 0.9, lineColor: [90, 90, 90], lineWidth: 0.12, textColor: 0}, headStyles: {fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold'},
-    head: [['Inspection', 'Time', 'Batch', 'Done by', 'Submitted', 'Check by', 'Checked', 'Not OK / missing']],
+    head: [['Inspection #', 'Time', 'Batch', 'Done by', 'Submitted', 'Check by', 'Checked', 'Not OK / missing']],
     body: rounds.map(r => [r.seq, pdfSafe(r.time), pdfSafe(r.batch), pdfSafe(r.done_name) + ' (' + initials(r.done_name) + ')', fmtDT(r.submitted_at), pdfSafe(r.check_name || (r.status === 'submitted' ? 'waiting for check' : '')), fmtDT(r.check_at), r.ng || 0]),
     didDrawPage: d => { if (d.pageNumber > 1) pageHead(); }});
   const nok = notOkRows(rounds, t);
@@ -668,7 +673,7 @@ function itemHtml(it, edit) {
     body = '<div class="rd">' + (st === 'ok' ? '<span class="chip ok">Condition: OK</span><span class="chip ok">Presence: /</span>' : st === 'ng' ? '<span class="chip bad">Condition: NOT OK</span><span class="chip ok">Presence: /</span>' : st === 'miss' ? '<span class="chip bad">Presence: X (' + T('missing', 'tiada') + ')</span>' : st === 'na' ? '<span class="chip">N/A</span>' : '<span class="chip warn">' + T('Not inspected', 'Belum diperiksa') + '</span>') + (a.r ? '<span class="small">' + esc(a.r) + '</span>' : '') + '</div>';
     if (st === 'ng' || st === 'miss') body += rvHtml(it, a);
   }
-  return '<div class="item a-' + (st === 'miss' ? 'ng' : st) + '" id="it-' + it.id + '"><div>' + ph + '</div><div><div class="nm">' + esc(it.name) + (it.flag ? ' <span class="chip warn">' + T('To review', 'Perlu semakan') + '</span>' : '') + '</div><div class="cr">' + (esc(it.crit) || '<span class="muted">' + T('(criteria not defined yet)', '(kriteria belum ditetapkan)') + '</span>') + '</div></div><div class="full">' + body + '</div></div>';
+  return '<div class="item a-' + (st === 'miss' ? 'ng' : st) + '" id="it-' + it.id + '"><div>' + ph + '</div><div><div class="nm">' + esc(it.name) + (it.flag ? ' <span class="chip warn">' + T('To review', 'Perlu semakan') + '</span>' : '') + '</div><div class="cr">' + (esc(it.crit) || '<span class="muted">' + T('(criteria not defined yet)', '(kriteria belum ditetapkan)') + '</span>') + '</div>' + (it.more && it.more.length ? '<button type="button" class="btn sm gn" data-act="zoom2" data-id="' + it.id + '">&#128247; ' + T('Good / No Good photos', 'Gambar Baik / Tidak Baik') + ' (' + it.more.length + ')</button>' : '') + '</div><div class="full">' + body + '</div></div>';
 }
 function rvHtml(it, a) {
   const v = a.rv, CL = {minor: T('Minor issue', 'Isu kecil'), major: T('Major issue', 'Isu besar')};
@@ -771,7 +776,7 @@ function vSetup(key) {
     h += '<div class="card" style="margin-top:12px"><div class="row"><label class="f" style="flex:1;margin:0"><span>' + T('Section', 'Seksyen') + ' ' + (si + 1) + '</span><input type="text" data-sf="' + si + '" value="' + esc(s.title) + '"></label><button class="btn sm bad" data-act="tdelsec" data-s="' + si + '">' + T('Delete section', 'Padam seksyen') + '</button></div>';
     s.items.forEach((it, ii) => {
       h += '<div class="ed-item"><label class="f" style="margin:0"><span>' + T('Part', 'Bahagian') + '</span><input type="text" data-if="name" data-s="' + si + '" data-i="' + ii + '" value="' + esc(it.name) + '"></label><label class="f" style="margin:0"><span>Condition criteria</span><textarea data-if="crit" data-s="' + si + '" data-i="' + ii + '">' + esc(it.crit) + '</textarea></label>' +
-        '<div class="row" style="padding-top:20px">' + (it.imgs && it.imgs[0] ? '<img src="' + esc(it.imgs[0]) + '" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:6px" loading="lazy">' : '') + '<label class="small nowrap"><input type="checkbox" data-if="flag" data-s="' + si + '" data-i="' + ii + '"' + (it.flag ? ' checked' : '') + '> ' + T('To review', 'Perlu semakan') + '</label>' +
+        '<div class="row" style="padding-top:20px">' + (it.imgs && it.imgs[0] ? '<img src="' + esc(it.imgs[0]) + '" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:6px" loading="lazy">' : '') + (it.more && it.more.length ? '<span class="chip info" title="' + T('Good / No Good guide photos', 'Gambar panduan Baik / Tidak Baik') + '">&#128247; ' + it.more.length + '</span>' : '') + '<label class="small nowrap"><input type="checkbox" data-if="flag" data-s="' + si + '" data-i="' + ii + '"' + (it.flag ? ' checked' : '') + '> ' + T('To review', 'Perlu semakan') + '</label>' +
         '<button class="btn sm" data-act="tmove" data-s="' + si + '" data-i="' + ii + '" data-n="-1" aria-label="Move up"' + (ii ? '' : ' disabled') + '>&#9650;</button><button class="btn sm" data-act="tmove" data-s="' + si + '" data-i="' + ii + '" data-n="1" aria-label="Move down"' + (ii < s.items.length - 1 ? '' : ' disabled') + '>&#9660;</button><button class="btn sm bad" data-act="tdel" data-s="' + si + '" data-i="' + ii + '" aria-label="Delete part">&#10005;</button></div></div>';
     });
     h += '<button class="btn sm" style="margin-top:10px" data-act="tadd" data-s="' + si + '">+ ' + T('Add part', 'Tambah bahagian') + '</button></div>';
@@ -874,7 +879,8 @@ document.addEventListener('click', async e => {
     else if (a === 'refresh') { await route(); toast(T('Up to date', 'Dikemas kini')); }
     else if (a === 'open') go(d.h);
     else if (a === 'start') { el.disabled = true; const id = await rpc('mic_start_round', {p_machine: d.k, p_date: d.d, p_time: nowHM(), p_batch: ''}); go('round/' + d.k + '/' + d.d + '/' + id); }
-    else if (a === 'zoom') { const it = findItem(d.id); lightbox(it.imgs, '<b>' + esc(it.name) + '</b><br>' + esc(it.crit)); }
+    else if (a === 'zoom') { const it = findItem(d.id); lightbox(it.imgs, '<b>' + esc(it.name) + '</b><br>' + esc(it.crit), it.more); }
+    else if (a === 'zoom2') { const it = findItem(d.id); lightbox([], '<b>' + esc(it.name) + '</b><br>' + esc(it.crit), it.more); }
     else if (a === 'ans') setAns(d.id, d.v);
     else if (a === 'rv') { const note = ($('[data-rvn="' + d.id + '"]') || {}).value || ''; if (d.d === 'go' && !note.trim()) { $('[data-rvn="' + d.id + '"]').focus(); return toast(T('Please write why the machine can proceed', 'Sila tulis sebab mesin boleh diteruskan'), true); } const y = window.scrollY; await rpc('mic_review_item', {p_round: S.round.id, p_item: d.id, p_sev: d.s, p_dec: d.d, p_note: note}); await vRound(S.rkey, S.rdate, S.round.id); window.scrollTo(0, y); toast(d.d === 'go' ? T('Decision saved: can proceed', 'Keputusan disimpan: boleh teruskan') : T('Decision saved: HOLD', 'Keputusan disimpan: TAHAN')); }
     else if (a === 'submit') await submitRound();
