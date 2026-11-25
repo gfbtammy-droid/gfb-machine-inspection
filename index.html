@@ -245,6 +245,21 @@ function ask(o) {
     });
   });
 }
+function askForm(o) {
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'modal-bg';
+    bg.innerHTML = '<form class="modal" role="dialog" aria-modal="true"><h3>' + esc(o.title) + '</h3>' + (o.body ? '<div class="small" style="margin-bottom:10px">' + o.body + '</div>' : '') +
+      o.fields.map(f => '<label class="f"><span>' + esc(f.label) + '</span>' + (f.type === 'textarea' ? '<textarea name="' + f.name + '" maxlength="300"></textarea>' : '<input type="' + (f.type || 'text') + '" name="' + f.name + '" value="' + esc(f.value == null ? '' : f.value) + '"' + (f.attrs || '') + ' autocomplete="off">') + '</label>').join('') +
+      '<div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-x="0">' + T('Cancel', 'Batal') + '</button><button class="btn pri" type="submit">' + esc(o.ok || 'OK') + '</button></div></form>';
+    document.body.appendChild(bg); const first = $('input,textarea', bg); if (first) { first.focus(); if (first.select) first.select(); }
+    bg.addEventListener('click', e => { if (e.target.closest('[data-x="0"]')) { bg.remove(); res(null); } });
+    $('form', bg).addEventListener('submit', e => {
+      e.preventDefault(); const v = {};
+      for (const f of o.fields) { const el = $('[name="' + f.name + '"]', bg); v[f.name] = el.value.trim(); if (f.req && !v[f.name]) { el.focus(); return toast(T('Please fill this in', 'Sila isi ruangan ini'), true); } }
+      bg.remove(); res(v);
+    });
+  });
+}
 function lightbox(imgs, cap, more) {
   const d = document.createElement('div'); d.className = 'lightbox';
   d.innerHTML = (imgs.length && more && more.length ? '<span class="tagl">' + T('F52 reference photo', 'Gambar rujukan F52') + '</span>' : '') + imgs.map(i => '<img src="' + esc(i) + '" alt="">').join('') +
@@ -349,7 +364,7 @@ async function route() {
     if (p[0] === 'sheet' && tpl(p[1])) return await vSheet(p[1], p[2] || S.today);
     if (p[0] === 'round' && tpl(p[1])) return await vRound(p[1], p[2], p[3]);
     if (p[0] === 'records') return await vRecords();
-    if (p[0] === 'setup' && can('admin')) return vSetup(p[1]);
+    if (p[0] === 'setup' && can('admin')) return await vSetup(p[1]);
     if (p[0] === 'users' && can('admin')) return await vUsers();
     return await vToday();
   } catch (e) { fail(e); }
@@ -430,7 +445,7 @@ async function vSheet(key, date, quiet) {
     '<a class="btn sm' + (r.status === 'draft' && r.done_by === S.me.id || r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? ' pri' : '') + '" href="#/round/' + key + '/' + date + '/' + r.id + '">' + (r.status === 'draft' && r.done_by === S.me.id ? T('Continue', 'Sambung') : r.status === 'submitted' && can('check') && r.done_by !== S.me.id ? T('Check', 'Semak') : T('View', 'Lihat')) + '</a></div>').join('');
   h += '<h3 style="margin:18px 0 8px">' + T('Form view', 'Paparan borang') + ' (' + esc(t.formNo) + ')</h3><div class="f52-wrap">' + f52Table(t, rs, sh, date, {screen: true, photos: true}) + '</div>';
   if (sh && sh.log && sh.log.length) h += '<details style="margin-top:14px"><summary class="muted">' + T('Change history', 'Sejarah perubahan') + ' (' + sh.log.length + ')</summary><div class="tbl-wrap" style="margin-top:8px"><table class="list"><tr><th>' + T('When', 'Bila') + '</th><th>' + T('Who', 'Siapa') + '</th><th>' + T('What', 'Apa') + '</th></tr>' +
-    sh.log.map(l => '<tr><td class="nowrap">' + fmtDT(l.at) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.act.replace(/_/g, ' ')) + (l.detail && l.detail.round ? ' #' + l.detail.round : '') + (l.detail && (l.detail.reason || l.detail.note) ? ' &ndash; ' + esc(l.detail.reason || l.detail.note) : '') + '</td></tr>').join('') + '</table></div></details>';
+    sh.log.map(l => '<tr><td class="nowrap">' + fmtDT(l.at) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.act.replace(/_/g, ' ')) + (l.detail && l.detail.round ? ' #' + l.detail.round : '') + (l.detail && l.detail.old ? ': ' + esc(l.detail.old) + ' &rarr; ' + esc(l.detail.new) : '') + (l.detail && (l.detail.reason || l.detail.note) ? ' &ndash; ' + esc(l.detail.reason || l.detail.note) : '') + '</td></tr>').join('') + '</table></div></details>';
   shell('today', h);
   if (keep) { const w = $('.f52-wrap'); if (w) { w.scrollLeft = keep[0]; w.scrollTop = keep[1]; } const dt = $('main details'); if (dt && keep[3]) dt.open = true; window.scrollTo(0, keep[2]); }
   setPoll(() => vSheet(key, date, true));
@@ -651,7 +666,7 @@ async function vRound(key, date, rid) {
     '<div class="card"><h2>' + esc(t.name) + ' &ndash; ' + T('Inspection', 'Pemeriksaan') + ' ' + r.seq + '</h2><div class="small muted">' + esc(t.formNo) + ' Rev ' + esc(t.rev) + ' &middot; ' + fmtD(date) + ' &middot; Done by: ' + esc(r.done_name) + '</div>' +
     (r.note ? '<div class="banner' + (r.status === 'draft' ? ' bad' : ' info') + '">' + (r.status === 'draft' ? T('Returned for correction', 'Dipulangkan untuk pembetulan') : T('Checker note', 'Catatan penyemak')) + ': ' + esc(r.note) + '</div>' : '') +
     '<div class="row" style="margin-top:10px;align-items:flex-start"><label class="f" style="flex:1;min-width:120px"><span>TIME</span><input type="time" id="r-time" value="' + esc(time) + '"' + (edit ? '' : ' disabled') + '></label>' +
-    '<div class="f" style="flex:2;min-width:160px"><span>BATCH NO.</span><div class="auto">' + (batch ? '<b class="num">' + esc(batch) + '</b>' : T('Automatic. Nothing to type. The number appears after you submit.', 'Automatik. Tidak perlu taip. Nombor keluar selepas anda hantar.')) + '</div></div></div></div>';
+    '<div class="f" style="flex:2;min-width:160px"><span>BATCH NO.</span><div class="auto">' + (batch ? '<b class="num">' + esc(batch) + '</b>' + (can('admin') && r.status !== 'draft' && sh.status !== 'verified' ? ' <button class="btn sm" style="min-height:30px;margin-left:8px" data-act="bedit">' + T('Edit', 'Ubah') + '</button>' : '') : T('Automatic. Nothing to type. The number appears after you submit.', 'Automatik. Tidak perlu taip. Nombor keluar selepas anda hantar.')) + '</div></div></div></div>';
   t.sections.forEach(s => {
     h += '<div class="sec-h"><span>' + esc(s.title || t.partHdr) + '</span>' + (s.ref ? (edit ? '<input type="text" data-ref="' + s.id + '" maxlength="30" placeholder="' + T('Unit no.', 'No. unit') + '" value="' + esc(S.refs[s.id] || '') + '" aria-label="Unit number">' : (S.refs[s.id] ? '<span class="chip">' + esc(S.refs[s.id]) + '</span>' : '')) : '') + '</div>';
     s.items.forEach(it => { h += itemHtml(it, edit); });
@@ -760,10 +775,15 @@ async function dlCsv() {
 }
 
 /* ---------- Admin: checklist setup ---------- */
-function vSetup(key) {
+async function vSetup(key) {
   if (!key || !tpl(key)) {
     S.ed = null;
-    return shell('setup', '<h2 style="margin-bottom:10px">' + T('Checklists (F52 forms)', 'Senarai semak (borang F52)') + '</h2><p class="muted small">' + T('Changes apply to new inspections from the next day sheet onwards. Checklists already started keep the form revision they were started with.', 'Perubahan terpakai kepada pemeriksaan baharu. Senarai semak yang telah dimulakan kekal dengan semakan borang asalnya.') + '</p><div class="grid">' +
+    const bi = await rpc('mic_batch_info'), ymTxt = ym => ym.slice(4) + '/' + ym.slice(0, 4);
+    const bcard = '<div class="card" style="margin-bottom:14px"><div class="row"><h2>' + T('Batch running number', 'Nombor siri batch') + '</h2><span class="sp"></span><button class="btn sm" data-act="bnext" data-ym="">+ ' + T('Another month', 'Bulan lain') + '</button></div>' +
+      '<p class="small muted" style="margin:4px 0 10px">' + T('Format YYYYMM-NNN, restarting at 001 every month. Set the next number here if it must continue from a paper log. To correct the number of one inspection, open that inspection and tap Edit next to the batch number.', 'Format YYYYMM-NNN, bermula semula pada 001 setiap bulan. Tetapkan nombor seterusnya di sini jika perlu menyambung daripada log kertas. Untuk membetulkan nombor satu pemeriksaan, buka pemeriksaan itu dan tekan Ubah di sebelah nombor batch.') + '</p>' +
+      '<div class="tbl-wrap"><table class="list" style="min-width:0"><tr><th>' + T('Month', 'Bulan') + '</th><th>' + T('Last number given', 'Nombor terakhir diberi') + '</th><th>' + T('Next number', 'Nombor seterusnya') + '</th><th></th></tr>' +
+      bi.months.map(m => '<tr><td class="num">' + ymTxt(m.ym) + '</td><td class="num">' + (m.last_issued ? m.ym + '-' + String(m.last_issued).padStart(3, '0') : '-') + '</td><td class="num"><b>' + esc(m.next) + '</b></td><td><button class="btn sm" data-act="bnext" data-ym="' + m.ym + '" data-hi="' + m.highest_in_use + '" data-n="' + (m.last_issued + 1) + '">' + T('Set next number', 'Tetapkan nombor seterusnya') + '</button></td></tr>').join('') + '</table></div></div>';
+    return shell('setup', bcard + '<h2 style="margin-bottom:10px">' + T('Checklists (F52 forms)', 'Senarai semak (borang F52)') + '</h2><p class="muted small">' + T('Changes apply to new inspections from the next day sheet onwards. Checklists already started keep the form revision they were started with.', 'Perubahan terpakai kepada pemeriksaan baharu. Senarai semak yang telah dimulakan kekal dengan semakan borang asalnya.') + '</p><div class="grid">' +
       S.tpls.map(t => '<a class="card mcard" href="#/setup/' + t.key + '"><h3>' + esc(t.name) + '</h3><div class="fn">' + esc(t.formNo) + ' &middot; Rev ' + esc(t.rev) + ' &middot; ' + esc(t.eff) + '</div><div><span class="chip ' + (t.status === 'active' ? 'ok' : 'warn') + '">' + MSTAT()[t.status] + '</span> <span class="chip">' + allItems(t).length + ' ' + T('parts', 'bahagian') + '</span>' +
         (allItems(t).some(i => !i.crit) ? ' <span class="chip bad">' + allItems(t).filter(i => !i.crit).length + ' ' + T('without criteria', 'tanpa kriteria') + '</span>' : '') + '</div></a>').join('') + '</div>');
   }
@@ -890,6 +910,19 @@ document.addEventListener('click', async e => {
     else if (a === 'verify') { const ng = S.sheet.rounds.reduce((x, r) => x + (r.ng || 0), 0); const n = await ask({title: T('Verify this checklist?', 'Sahkan senarai semak ini?'), body: T('All inspections have been checked. After you verify, the checklist is locked. Your name and the time will be recorded as <b>Verify by</b>.', 'Semua pemeriksaan telah disemak. Selepas disahkan, senarai semak dikunci. Nama dan masa anda akan direkod sebagai <b>Verify by</b>.') + (ng ? '<div class="banner bad">' + ng + ' ' + T('Not OK / missing in total. Confirm corrective action (F45) is recorded.', 'Tidak OK / tiada keseluruhannya. Pastikan tindakan pembetulan (F45) direkod.') + '</div>' : ''), input: 'text', label: T('Note (optional)', 'Catatan (pilihan)'), ok: T('Verify', 'Sahkan')}); if (n !== null) { await rpc('mic_verify', {p_id: S.sheet.id, p_note: n || null}); toast(T('Verified', 'Disahkan')); route(); } }
     else if (a === 'reopen') { const n = await ask({title: T('Reopen this verified checklist?', 'Buka semula senarai semak yang telah disahkan?'), input: 'text', label: T('Reason (required, kept in the change history)', 'Sebab (wajib, disimpan dalam sejarah perubahan)'), required: true, ok: T('Reopen', 'Buka semula'), danger: true}); if (n) { await rpc('mic_reopen', {p_id: S.sheet.id, p_reason: n}); route(); } }
     else if (a === 'delrec') { e.stopPropagation(); const n = await ask({title: T('Delete this record?', 'Padam rekod ini?'), body: '<b>' + esc(d.n) + '</b><br>' + T('All inspections in this checklist will be removed and cannot be brought back. The deletion (who, when, why) is kept in the log. Batch numbers already given are not reused.', 'Semua pemeriksaan dalam senarai semak ini akan dibuang dan tidak boleh dikembalikan. Pemadaman (siapa, bila, kenapa) disimpan dalam log. Nombor batch yang telah diberi tidak digunakan semula.'), input: 'text', label: T('Reason (required)', 'Sebab (wajib)'), required: true, ok: T('Delete record', 'Padam rekod'), danger: true}); if (n) { await rpc('mic_delete_inspection', {p_id: d.id, p_reason: n}); toast(T('Record deleted', 'Rekod dipadam')); if (location.hash.indexOf('#/records') === 0) await vRecords(); else go('today'); } }
+    else if (a === 'bnext') {
+      const now = new Date(), ymDef = d.ym || (now.getMonth() === 11 ? (now.getFullYear() + 1) + '01' : now.getFullYear() + String(now.getMonth() + 2).padStart(2, '0'));
+      const v = await askForm({title: T('Set next batch number', 'Tetapkan nombor batch seterusnya'), body: d.ym ? T('The next inspection submitted in this month gets this number. It must be higher than the highest number already used (', 'Pemeriksaan seterusnya yang dihantar dalam bulan ini akan mendapat nombor ini. Ia mesti lebih besar daripada nombor tertinggi yang telah digunakan (') + String(d.hi || 0).padStart(3, '0') + ').' : '',
+        fields: (d.ym ? [] : [{name: 'ym', label: T('Month (YYYYMM), e.g. 202612', 'Bulan (YYYYMM), cth. 202612'), value: ymDef, req: true, attrs: ' inputmode="numeric" maxlength="6"'}]).concat([
+          {name: 'n', label: T('Next number (e.g. 50 for ', 'Nombor seterusnya (cth. 50 untuk ') + (d.ym || ymDef) + '-050)', type: 'number', value: d.n || 1, req: true, attrs: ' min="1" max="99999" inputmode="numeric"'},
+          {name: 'why', label: T('Reason (required)', 'Sebab (wajib)'), type: 'textarea', req: true}]), ok: T('Save', 'Simpan')});
+      if (v) { await rpc('mic_set_batch_next', {p_ym: d.ym || v.ym, p_next: parseInt(v.n, 10), p_reason: v.why}); toast(T('Next batch number saved', 'Nombor batch seterusnya disimpan')); await vSetup(); }
+    }
+    else if (a === 'bedit') {
+      const v = await askForm({title: T('Edit batch number', 'Ubah nombor batch'), body: T('Use the format YYYYMM-NNN. A number already used by another inspection is refused. The change is kept in the change history.', 'Guna format YYYYMM-NNN. Nombor yang telah digunakan oleh pemeriksaan lain akan ditolak. Perubahan disimpan dalam sejarah perubahan.'),
+        fields: [{name: 'b', label: T('Batch number', 'Nombor batch'), value: S.round.batch, req: true, attrs: ' maxlength="12" autocapitalize="none" spellcheck="false"'}, {name: 'why', label: T('Reason (required)', 'Sebab (wajib)'), type: 'textarea', req: true}], ok: T('Save', 'Simpan')});
+      if (v) { const y = window.scrollY; await rpc('mic_set_round_batch', {p_round: S.round.id, p_batch: v.b, p_reason: v.why}); await vRound(S.rkey, S.rdate, S.round.id); window.scrollTo(0, y); toast(T('Batch number changed', 'Nombor batch diubah')); }
+    }
     else if (a === 'print') printSheet(d.ph === '1');
     else if (a === 'pdf') { el.disabled = true; try { await pdfSheet(); } finally { el.disabled = false; } }
     else if (a === 'recgo') { S.rec = {from: $('#rf').value || S.today, to: $('#rt').value || S.today, m: $('#rm').value, st: $('#rs').value}; if (S.rec.from > S.rec.to) S.rec.from = S.rec.to; await vRecords(); }

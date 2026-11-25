@@ -48,7 +48,7 @@
       i.template.sections.forEach(s => s.items.forEach(it => { const x = (a.p_items || {})[it.id]; if (x && x.c && (x.c === 'na' || x.p)) { if (x.c === 'ng' || x.p === 'n') { bad++; if (a.p_submit && !String(x.r || '').trim()) E('x / Please write a remark for every part that is Not OK or missing'); } clean[it.id] = {c: x.c, p: x.c === 'na' ? '' : x.p, r: x.r || ''}; } else missing++; }));
       if (a.p_submit && missing) E(missing + ' bahagian belum diperiksa / ' + missing + ' part(s) not yet inspected');
       if (a.p_submit && !a.p_time) E('Masa diperlukan / Time is required');
-      if (a.p_submit && !/^\d{6}-\d+$/.test(r.batch)) { const ym = i.date.slice(0, 7).replace('-', ''); DB.ctr[ym] = (DB.ctr[ym] || 0) + 1; r.batch = ym + '-' + String(DB.ctr[ym]).padStart(3, '0'); }
+      if (a.p_submit && !/^\d{6}-\d+$/.test(r.batch)) { const ym = i.date.slice(0, 7).replace('-', ''); do { DB.ctr[ym] = (DB.ctr[ym] || 0) + 1; r.batch = ym + '-' + String(DB.ctr[ym]).padStart(3, '0'); } while (DB.insp.some(x => x.rounds.some(y => y !== r && y.batch === r.batch))); }
       Object.assign(r, {time: a.p_time, refs: a.p_refs || {}, items: clean, ng: bad, status: a.p_submit ? 'submitted' : 'draft', submitted_at: a.p_submit ? new Date().toISOString() : null, updated_at: new Date().toISOString()});
       if (a.p_submit) { r.note = null; lg('round_submit', i, {round: r.seq}); }
       return {status: r.status, ng: bad, missing, batch: r.batch};
@@ -65,6 +65,10 @@
       if (i.rounds.some(r => r.done_by === me.id || r.check_by === me.id)) E('x / You cannot verify a checklist that you filled in or checked yourself');
       Object.assign(i, {status: 'verified', verify_by: me.id, verify_name: me.name, verify_at: new Date().toISOString(), verify_note: a.p_note || null}); lg('verify', i, {note: a.p_note});
     },
+    mic_batch_info() { need(4); const now = today().slice(0, 7).replace('-', ''); const used = {}; DB.insp.forEach(i => i.rounds.forEach(r => { if (/^\d{6}-\d+$/.test(r.batch)) { const ym = r.batch.slice(0, 6), n = +r.batch.slice(7); used[ym] = Math.max(used[ym] || 0, n); } }));
+      const yms = [...new Set([now].concat(Object.keys(DB.ctr), Object.keys(used)))].sort().reverse(); return {current: now, months: yms.map(ym => ({ym, last_issued: DB.ctr[ym] || 0, highest_in_use: used[ym] || 0, next: ym + '-' + String((DB.ctr[ym] || 0) + 1).padStart(3, '0')}))}; },
+    mic_set_batch_next(a) { need(4); if (!String(a.p_reason).trim()) E('x / Please give a reason'); if (!/^\d{4}(0[1-9]|1[0-2])$/.test(a.p_ym)) E('x / Invalid month'); const hi = F.mic_batch_info().months.find(m => m.ym === a.p_ym); if (hi && a.p_next <= hi.highest_in_use) E('x / The next number must be higher than ' + String(hi.highest_in_use).padStart(3, '0') + ' (the highest number already used this month)'); DB.ctr[a.p_ym] = a.p_next - 1; },
+    mic_set_round_batch(a) { need(4); const [i, r] = findR(a.p_round); const b = String(a.p_batch).trim(); if (!/^\d{4}(0[1-9]|1[0-2])-\d{3,5}$/.test(b)) E('x / Format must be YYYYMM-NNN, e.g. 202611-005'); if (DB.insp.some(x => x.rounds.some(y => y.batch === b && y !== r))) E('x / Batch number ' + b + ' is already used'); lg('batch_edit', i, {round: r.seq, old: r.batch, new: b, reason: a.p_reason}); r.batch = b; const ym = b.slice(0, 6); DB.ctr[ym] = Math.max(DB.ctr[ym] || 0, +b.slice(7)); },
     mic_reopen(a) { need(4); const i = DB.insp.find(x => x.id === a.p_id); Object.assign(i, {status: 'open', verify_by: null, verify_name: null, verify_at: null}); lg('reopen', i, {reason: a.p_reason}); }
   };
   window.supabase = {createClient(u_, k_, opt) {

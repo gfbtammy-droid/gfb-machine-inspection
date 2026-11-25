@@ -402,8 +402,11 @@ begin
     end if;
     if v_batch = '' then   -- running batch number YYYYMM-NNN, given once when the round is first submitted
       v_ym := to_char(i.insp_date, 'YYYYMM');
-      insert into public.mic_counters as c (ym, n) values (v_ym, 1) on conflict (ym) do update set n = c.n + 1 returning c.n into v_n;
-      v_batch := v_ym || '-' || lpad(v_n::text, 3, '0');
+      loop   -- skip any number already in use (e.g. set by hand)
+        insert into public.mic_counters as c (ym, n) values (v_ym, 1) on conflict (ym) do update set n = c.n + 1 returning c.n into v_n;
+        v_batch := v_ym || '-' || lpad(v_n::text, 3, '0');
+        exit when not exists (select 1 from public.mic_rounds where batch = v_batch and id <> p_id);
+      end loop;
     end if;
   end if;
   update public.mic_rounds set time_text = left(btrim(coalesce(p_time, '')), 20), batch = v_batch,
@@ -569,6 +572,75 @@ begin
     from (select * from public.mic_log where act = 'inspection_delete' order by id desc limit 200) l), '[]'::jsonb);
 end $$;
 
+-- ---------- Admin: running batch number ----------
+-- Batch numbers are YYYYMM-NNN, one counter per month (mic_counters.n = last number issued).
+-- No batch number can ever be used twice.
+create unique index if not exists mic_rounds_batch_uq on public.mic_rounds (batch) where batch <> '';
+
+create or replace function public.mic_batch_num(p_batch text) returns int
+language sql immutable set search_path = public as $$
+  select case when p_batch ~ '^[0-9]{6}-[0-9]{1,6}$' then split_part(p_batch, '-', 2)::int end
+$$;
+
+create or replace function public.mic_batch_info() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v_now text := to_char(public.mic_today(), 'YYYYMM');
+begin
+  perform public.mic_must('admin');
+  return jsonb_build_object('current', v_now, 'months', coalesce((
+    select jsonb_agg(jsonb_build_object('ym', m.ym, 'last_issued', coalesce(c.n, 0), 'highest_in_use', coalesce(u.hi, 0), 'in_use', coalesce(u.cnt, 0),
+                                        'next', m.ym || '-' || lpad((coalesce(c.n, 0) + 1)::text, 3, '0')) order by m.ym desc)
+      from (select ym from public.mic_counters union select left(batch, 6) from public.mic_rounds where public.mic_batch_num(batch) is not null union select v_now) m
+      left join public.mic_counters c on c.ym = m.ym
+      left join (select left(batch, 6) ym, max(public.mic_batch_num(batch)) hi, count(*) cnt from public.mic_rounds
+                  where public.mic_batch_num(batch) is not null group by 1) u on u.ym = m.ym), '[]'::jsonb));
+end $$;
+
+-- Set the NEXT number to be given for a month. It must be higher than every number already in use that month.
+create or replace function public.mic_set_batch_next(p_ym text, p_next int, p_reason text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_hi int; v_old int;
+begin
+  perform public.mic_must('admin');
+  if btrim(coalesce(p_reason, '')) = '' then raise exception 'Sila nyatakan sebab / Please give a reason'; end if;
+  if coalesce(p_ym, '') !~ '^[0-9]{4}(0[1-9]|1[0-2])$' then raise exception 'Bulan tidak sah / Invalid month'; end if;
+  if p_next is null or p_next < 1 or p_next > 99999 then raise exception 'Nombor mesti antara 1 dan 99999 / Number must be from 1 to 99999'; end if;
+  select coalesce(max(public.mic_batch_num(batch)), 0) into v_hi from public.mic_rounds where left(batch, 6) = p_ym and public.mic_batch_num(batch) is not null;
+  if p_next <= v_hi then
+    raise exception 'Nombor seterusnya mesti lebih besar daripada % (nombor tertinggi yang telah digunakan bulan ini) / The next number must be higher than % (the highest number already used this month)',
+      lpad(v_hi::text, 3, '0'), lpad(v_hi::text, 3, '0');
+  end if;
+  select n into v_old from public.mic_counters where ym = p_ym;
+  insert into public.mic_counters as c (ym, n) values (p_ym, p_next - 1) on conflict (ym) do update set n = p_next - 1;
+  perform public.mic_addlog('batch_next_set', null, null, jsonb_build_object('month', p_ym, 'old_next', coalesce(v_old, 0) + 1, 'new_next', p_next, 'reason', left(btrim(p_reason), 300)));
+end $$;
+
+-- Correct the batch number of one submitted inspection (not allowed once the checklist is verified).
+create or replace function public.mic_set_round_batch(p_round uuid, p_batch text, p_reason text) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.mic_rounds; i public.mic_inspections; v_new text := upper(btrim(coalesce(p_batch, ''))); v_num int;
+begin
+  perform public.mic_must('admin');
+  if btrim(coalesce(p_reason, '')) = '' then raise exception 'Sila nyatakan sebab / Please give a reason'; end if;
+  if v_new !~ '^[0-9]{4}(0[1-9]|1[0-2])-[0-9]{3,5}$' then
+    raise exception 'Format mesti YYYYMM-NNN, cth. 202611-005 / Format must be YYYYMM-NNN, e.g. 202611-005';
+  end if;
+  select * into r from public.mic_rounds where id = p_round for update;
+  if not found then raise exception 'Pemeriksaan tidak dijumpai / Inspection not found'; end if;
+  if r.status = 'draft' or r.batch = '' then raise exception 'Pemeriksaan ini belum ada nombor batch / This inspection has no batch number yet'; end if;
+  select * into i from public.mic_inspections where id = r.inspection_id;
+  if i.status = 'verified' then raise exception 'Senarai semak yang telah disahkan mesti dibuka semula dahulu / A verified checklist must be reopened first'; end if;
+  if v_new = r.batch then return; end if;
+  if exists (select 1 from public.mic_rounds where batch = v_new and id <> p_round) then
+    raise exception 'Nombor batch % sudah digunakan / Batch number % is already used', v_new, v_new;
+  end if;
+  update public.mic_rounds set batch = v_new, updated_at = now() where id = p_round;
+  v_num := public.mic_batch_num(v_new);
+  insert into public.mic_counters as c (ym, n) values (left(v_new, 6), v_num) on conflict (ym) do update set n = greatest(c.n, v_num);
+  update public.mic_inspections set updated_at = now() where id = i.id;
+  perform public.mic_addlog('batch_edit', i.id, p_round, jsonb_build_object('round', r.seq, 'old', r.batch, 'new', v_new, 'reason', left(btrim(p_reason), 300)));
+end $$;
+
 -- ---------- who may call what ----------
 do $$
 declare f record;
@@ -576,7 +648,7 @@ begin
   for f in select p.oid::regprocedure as sig, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname like 'mic\_%' loop
     execute format('revoke execute on function %s from public, anon', f.sig);
-    if f.proname in ('mic_addlog', 'mic_need', 'mic_must', 'mic_rank', 'mic_round_json') then
+    if f.proname in ('mic_addlog', 'mic_need', 'mic_must', 'mic_rank', 'mic_round_json', 'mic_batch_num') then
       execute format('revoke execute on function %s from authenticated', f.sig);
     else
       execute format('grant execute on function %s to authenticated', f.sig);
