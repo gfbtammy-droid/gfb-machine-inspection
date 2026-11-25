@@ -7,7 +7,7 @@
     {id: 'u3', email: 'siti@mic.gfbfood.com', name: 'Siti QC', funcs: ['fill', 'check'], active: true},
     {id: 'u4', email: 'farah@demo.my', name: 'Farah Exec', funcs: ['fill', 'check', 'verify'], active: true}
   ];
-  const DB = {users: U, tpls: [], insp: [], log: [], ctr: {}};
+  const DB = {users: U, tpls: [], insp: [], log: [], ctr: {}, del: []};
   window.__DB = DB;
   let me = null, n = 0;
   const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -28,7 +28,9 @@
     mic_add_user(a) { need(4); let e = a.p_login.toLowerCase(); if (!e.includes('@')) e += '@mic.gfbfood.com'; const u = DB.users.find(x => x.email === e); if (!u) return 'no_account'; if (u.listed !== false) return 'exists'; u.listed = true; u.name = a.p_name; u.funcs = a.p_funcs; u.active = a.p_active; return 'added'; },
     mic_reset_password(a) { need(4); if (a.p_password.length < 8) E('x / Password must be at least 8 characters'); DB.users.find(x => x.id === a.p_id).pw = a.p_password; },
     mic_save_template(a) { need(4); const i = DB.tpls.findIndex(t => t.key === a.p_key); DB.tpls[i] = JSON.parse(JSON.stringify(a.p_data)); },
-    mic_range(a) { need(1); return DB.insp.filter(i => i.date >= a.p_from && i.date <= a.p_to).map(i => ({id: i.id, machine: i.machine, date: i.date, status: i.status, verify_name: i.verify_name, verify_at: i.verify_at, formNo: i.template.formNo, rev: i.template.rev, name: i.template.name, rounds: i.rounds.map(r => rj(r, false))})); },
+    mic_delete_inspection(a) { need(4); if (!String(a.p_reason).trim()) E('x / Please give a reason'); const i = DB.insp.find(x => x.id === a.p_id); if (i.status === 'verified') E('x / A verified checklist must be reopened first'); DB.del.unshift({at: new Date().toISOString(), by: me.name, detail: {name: i.template.name, date: i.date, reason: a.p_reason, inspections: i.rounds.map(r => ({no: r.seq, batch: r.batch, status: r.status, done_by: r.done_name, check_by: r.check_name}))}}); DB.insp = DB.insp.filter(x => x !== i); },
+    mic_deleted_log() { need(4); return DB.del; },
+    mic_range(a) { need(1); return DB.insp.filter(i => i.rounds.length && i.date >= a.p_from && i.date <= a.p_to).map(i => ({id: i.id, machine: i.machine, date: i.date, status: i.status, verify_name: i.verify_name, verify_at: i.verify_at, formNo: i.template.formNo, rev: i.template.rev, name: i.template.name, rounds: i.rounds.map(r => rj(r, false))})); },
     mic_sheet(a) { need(1); const i = DB.insp.find(x => x.machine === a.p_machine && x.date === a.p_date); if (!i) return null; return JSON.parse(JSON.stringify(Object.assign({}, i, {rounds: i.rounds.map(r => rj(r, true)), log: rk() >= 2 ? DB.log.filter(l => l.insp === i.id) : []}))); },
     mic_export(a) { need(2); return DB.insp.filter(i => i.date >= a.p_from && i.date <= a.p_to).map(i => F.mic_sheet({p_machine: i.machine, p_date: i.date})); },
     mic_start_round(a) {
@@ -51,7 +53,7 @@
       if (a.p_submit) { r.note = null; lg('round_submit', i, {round: r.seq}); }
       return {status: r.status, ng: bad, missing, batch: r.batch};
     },
-    mic_delete_round(a) { need(1); const [i, r] = findR(a.p_id); if (r.status !== 'draft') E('x / Only a draft can be deleted'); i.rounds = i.rounds.filter(x => x !== r); },
+    mic_delete_round(a) { need(1); const [i, r] = findR(a.p_id); if (r.status !== 'draft') E('x / Only a draft can be deleted'); i.rounds = i.rounds.filter(x => x !== r); if (!i.rounds.length) DB.insp = DB.insp.filter(x => x !== i); },
     mic_check_round(a) {
       need(1); if (!has('check')) E('x / Your account is not allowed to do this'); const [i, r] = findR(a.p_id); if (i.status === 'verified') E('x / This checklist has already been verified');
       if (a.p_ok) { if (r.status !== 'submitted') E('x / This round is not waiting for a check'); if (r.done_by === me.id) E('x / You cannot check your own inspection'); if (Object.values(r.items).some(x => isNg(x) && !x.rv)) E('x / Decide Can proceed or Hold for every Not OK part first'); Object.assign(r, {status: 'checked', check_by: me.id, check_name: me.name, check_at: new Date().toISOString(), note: a.p_note || null}); lg('round_check', i, {round: r.seq, note: a.p_note}); }

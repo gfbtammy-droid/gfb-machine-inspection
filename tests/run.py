@@ -106,6 +106,12 @@ with sync_playwright() as p:
     signout(pg)
     # --- admin ---
     login(pg, 'admin@demo.my'); check(pg.locator('.nav a').count() == 5, 'admin sees 4 tabs + Guide')
+    # admin deletes a record (reason required; verified ones have no Delete button)
+    pg.click('.mcard >> text=Drum Mixer 100 kg'); pg.click('[data-act=start]'); pg.wait_for_selector('.item'); pg.click('.item [data-v=ok] >> nth=0'); pg.wait_for_timeout(1800)
+    pg.click('.nav >> text=Records'); pg.wait_for_selector('table.list tr.click'); n0 = pg.locator('tr.click').count(); check(pg.locator('tr.click [data-act=delrec]').count() == n0 - 1, 'Delete on open records only (%d rows)' % n0)
+    pg.click('tr.click [data-act=delrec] >> nth=0'); pg.wait_for_selector('.modal'); check('#/records' in pg.url, 'Delete does not open the record'); pg.click('.modal [data-x="1"]'); check(pg.locator('.modal').count() == 1, 'reason is required'); pg.fill('#askv', 'Test record made during trial'); pg.screenshot(path=OUT + '/10a-delete.png'); pg.click('.modal [data-x="1"]')
+    pg.wait_for_selector('.toast >> text=Record deleted'); check(pg.locator('tr.click').count() == n0 - 1, 'record removed from the list')
+    pg.click('#dellog summary'); pg.wait_for_selector('#dellogt >> text=Test record made during trial'); check('Demo Admin' in pg.locator('#dellogt').inner_text(), 'deletion is logged with name and reason')
     pg.click('.nav >> text=Checklists'); pg.click('.mcard >> text=Semi-Auto Packing Machine 3'); pg.wait_for_selector('[data-tf=rev]'); pg.screenshot(path=OUT + '/11-setup-desktop.png')
     pg.fill('[data-tf=rev]', '02'); pg.select_option('select[data-tf=status]', 'active'); pg.fill('[data-if=crit] >> nth=0', 'Intact, No dent, No Broken, Clean'); pg.click('[data-act=tsave] >> nth=0'); pg.wait_for_selector('.grid')
     check('Rev 02' in pg.locator('.mcard >> text=Semi-Auto Packing Machine 3').locator('xpath=..').inner_text(), 'template saved')

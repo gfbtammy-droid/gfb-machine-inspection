@@ -300,7 +300,8 @@ begin
       'name', i.template->>'name',
       'rounds', coalesce((select jsonb_agg(public.mic_round_json(r, false) order by r.seq) from public.mic_rounds r where r.inspection_id = i.id), '[]'::jsonb))
       order by i.insp_date desc, i.machine)
-    from public.mic_inspections i where i.insp_date between p_from and p_to), '[]'::jsonb);
+    from public.mic_inspections i where i.insp_date between p_from and p_to
+      and exists (select 1 from public.mic_rounds r2 where r2.inspection_id = i.id)), '[]'::jsonb);
 end $$;
 
 -- One machine, one day: the full checklist with every round.
@@ -428,6 +429,9 @@ begin
     raise exception 'Hanya orang yang memulakan pusingan ini boleh memadamnya / Only the person who started this round can delete it';
   end if;
   delete from public.mic_rounds where id = p_id;
+  if not exists (select 1 from public.mic_rounds where inspection_id = r.inspection_id) then
+    delete from public.mic_inspections where id = r.inspection_id and status = 'open';   -- nothing left on this checklist
+  end if;
   perform public.mic_addlog('round_delete', r.inspection_id, p_id, jsonb_build_object('round', r.seq));
 end $$;
 
@@ -534,6 +538,35 @@ begin
    where id = p_id and status = 'verified';
   if not found then raise exception 'Senarai semak ini belum disahkan / This checklist is not verified'; end if;
   perform public.mic_addlog('reopen', p_id, null, jsonb_build_object('reason', p_reason));
+end $$;
+
+-- ---------- Admin: delete a checklist record ----------
+-- A reason is required and the deletion is written to the log (who, when, why, what was in it).
+-- A verified checklist must be reopened first. Batch numbers of deleted inspections are not reused.
+create or replace function public.mic_delete_inspection(p_id uuid, p_reason text) returns void
+language plpgsql security definer set search_path = public as $$
+declare i public.mic_inspections; v jsonb;
+begin
+  perform public.mic_must('admin');
+  if btrim(coalesce(p_reason, '')) = '' then raise exception 'Sila nyatakan sebab / Please give a reason'; end if;
+  select * into i from public.mic_inspections where id = p_id for update;
+  if not found then raise exception 'Rekod tidak dijumpai / Record not found'; end if;
+  if i.status = 'verified' then
+    raise exception 'Senarai semak yang telah disahkan mesti dibuka semula dahulu / A verified checklist must be reopened first';
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('no', seq, 'status', status, 'batch', batch, 'done_by', done_name, 'check_by', check_name, 'not_ok', ng) order by seq), '[]'::jsonb)
+    into v from public.mic_rounds where inspection_id = p_id;
+  delete from public.mic_inspections where id = p_id;
+  perform public.mic_addlog('inspection_delete', p_id, null, jsonb_build_object('machine', i.machine, 'name', i.template->>'name',
+          'date', i.insp_date, 'reason', left(btrim(p_reason), 300), 'inspections', v));
+end $$;
+
+create or replace function public.mic_deleted_log() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public.mic_must('admin');
+  return coalesce((select jsonb_agg(jsonb_build_object('at', l.at, 'by', l.name, 'detail', l.detail) order by l.id desc)
+    from (select * from public.mic_log where act = 'inspection_delete' order by id desc limit 200) l), '[]'::jsonb);
 end $$;
 
 -- ---------- who may call what ----------
